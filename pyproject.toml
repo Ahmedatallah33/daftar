@@ -1,0 +1,29 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [".venv", "exports", "data", "__pycache__"]
+
+[tool.ruff.lint]
+# E/W: pycodestyle, F: pyflakes (dead code/imports), B: bugbear (likely bugs)
+select = ["E", "F", "W", "B"]
+# E712 (== True): used intentionally with SQLAlchemy boolean columns
+ignore = ["E712", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# main.py installs a crash logger before importing app modules — by design
+"main.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_redundant_casts = true
+check_untyped_defs = true
+exclude = '(^\.venv|^tests|^exports|^data)'
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+filterwarnings = [
+    "default::DeprecationWarning",
+]

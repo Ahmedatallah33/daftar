@@ -1,0 +1,92 @@
+# Python virtual environments and local interpreters
+.venv/
+venv/
+env/
+ENV/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# Test, coverage, and profiling output
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+junit.xml
+*.prof
+*.coverage
+
+# Local environment and secrets (keep shareable templates)
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.local
+
+# Teacher Hub user data and generated exports
+data/*.db
+data/**/*.db
+data/*.sqlite
+data/**/*.sqlite
+data/*.sqlite3
+data/**/*.sqlite3
+data/backups/
+exports/invoices/
+exports/**/*.pdf
+exports/**/*.xlsx
+exports/**/*.xls
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Generated document artifacts outside the standard export directories
+*.pdf
+*.xlsx
+*.xls
+
+# PyInstaller, packaging, and build output
+build/
+dist/
+*.spec
+*.egg-info/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# Crash dumps, logs, and temporary files
+*.log
+*.dmp
+*.dump
+*.stacktrace
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# Editor, assistant, and local workspace metadata
+.idea/
+.vscode/
+.claude/
+.codex/
+*.code-workspace
+
+# Operating-system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
