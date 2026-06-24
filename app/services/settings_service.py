@@ -117,3 +117,21 @@ def get_invoice_message_template() -> str:
 
 def set_invoice_message_template(text: str) -> None:
     set_setting("invoice_whatsapp_template", text)
+
+
+def get_last_full_backup() -> dict | None:
+    value = get_setting("last_full_backup")
+    if not isinstance(value, dict):
+        return None
+    path = value.get("path")
+    created_at = value.get("created_at")
+    if not isinstance(path, str) or not isinstance(created_at, str):
+        return None
+    return {"path": path, "created_at": created_at}
+
+
+def set_last_full_backup(path: str, created_at: str) -> None:
+    set_setting(
+        "last_full_backup",
+        {"path": str(path), "created_at": str(created_at)},
+    )

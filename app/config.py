@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 APP_NAME = "TeacherHub"
+APP_RELEASE_REFERENCE = "Sprint 2A"
 SOURCE_ROOT = Path(__file__).resolve().parent.parent
 IS_FROZEN = bool(getattr(sys, "frozen", False))
 RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", SOURCE_ROOT)) if IS_FROZEN else SOURCE_ROOT
@@ -32,6 +33,7 @@ BACKUPS_DIR = USER_ROOT / "backups"
 EXPORTS_DIR = USER_ROOT / "exports"
 INVOICES_DIR = EXPORTS_DIR / "invoices"
 LOGS_DIR = USER_ROOT / "logs"
+RESTORE_DIR = USER_ROOT / "restore"
 
 BASE_DIR = RESOURCE_ROOT  # Backward-compatible alias for read-only application assets.
 RESOURCES_DIR = RESOURCE_ROOT / "app" / "resources"
@@ -72,7 +74,7 @@ class MigrationResult:
 
 
 def ensure_dirs() -> None:
-    for path in (DATA_DIR, BACKUPS_DIR, INVOICES_DIR, LOGS_DIR):
+    for path in (DATA_DIR, BACKUPS_DIR, INVOICES_DIR, LOGS_DIR, RESTORE_DIR):
         path.mkdir(parents=True, exist_ok=True)
 
 

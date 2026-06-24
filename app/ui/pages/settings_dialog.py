@@ -1,15 +1,24 @@
-from PySide6.QtCore import Qt
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTabWidget,
     QWidget, QListWidget, QListWidgetItem, QLineEdit, QPlainTextEdit,
-    QCheckBox, QSpinBox, QFormLayout, QMessageBox
+    QCheckBox, QSpinBox, QFormLayout, QMessageBox, QFileDialog, QApplication,
 )
 
+from app.services.backup_restore_service import (
+    create_full_backup,
+    stage_restore,
+    validate_backup_archive,
+)
 from app.services.settings_service import (
     get_templates, save_templates, DEFAULT_TEMPLATES,
     get_notifications_enabled, set_notifications_enabled,
-    get_notification_minutes, set_notification_minutes
+    get_notification_minutes, set_notification_minutes,
+    get_last_full_backup, set_last_full_backup,
 )
+from app.ui.helpers.worker import run_in_background
 
 
 TEMPLATE_VARS_HELP = (
@@ -40,6 +49,7 @@ class SettingsDialog(QDialog):
         tabs = QTabWidget()
         tabs.addTab(self._build_templates_tab(), "✉  قوالب الواتساب")
         tabs.addTab(self._build_notifications_tab(), "🔔  الإشعارات")
+        tabs.addTab(self._build_backup_tab(), "🛡  النسخ والاستعادة")
         tabs.addTab(self._build_about_tab(), "ℹ  حول")
         root.addWidget(tabs, 1)
 
@@ -218,6 +228,176 @@ class SettingsDialog(QDialog):
 
         layout.addStretch(1)
         return w
+
+    # ----------- BACKUP / RESTORE TAB -----------
+    def _build_backup_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setSpacing(14)
+
+        title = QLabel("النسخ والاستعادة")
+        title.setObjectName("SectionTitle")
+        layout.addWidget(title)
+
+        intro = QLabel(
+            "احفظ نسخة كاملة قابلة للنقل تشمل بياناتك والفواتير وملفات Excel، "
+            "أو استعد نسخة سابقة بأمان."
+        )
+        intro.setWordWrap(True)
+        intro.setObjectName("PageSubtitle")
+        layout.addWidget(intro)
+
+        self.create_backup_btn = QPushButton("إنشاء نسخة احتياطية كاملة")
+        self.create_backup_btn.setObjectName("SuccessBtn")
+        self.create_backup_btn.clicked.connect(self._choose_backup_destination)
+        layout.addWidget(self.create_backup_btn)
+
+        self.restore_backup_btn = QPushButton("استعادة نسخة احتياطية")
+        self.restore_backup_btn.setObjectName("DangerBtn")
+        self.restore_backup_btn.clicked.connect(self._choose_restore_archive)
+        layout.addWidget(self.restore_backup_btn)
+
+        latest_title = QLabel("آخر نسخة احتياطية كاملة")
+        latest_title.setStyleSheet("font-weight: 700; margin-top: 12px;")
+        layout.addWidget(latest_title)
+
+        self.latest_backup_label = QLabel()
+        self.latest_backup_label.setWordWrap(True)
+        self.latest_backup_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.latest_backup_label.setStyleSheet(
+            "background-color: rgba(99,102,241,0.08); color: #4338CA;"
+            "padding: 12px 14px; border-radius: 10px;"
+        )
+        layout.addWidget(self.latest_backup_label)
+        self._refresh_latest_backup()
+
+        note = QLabel(
+            "احتفظ بالنسخة على قرص خارجي أو مكان موثوق. النسخة تبقى محلية ولا "
+            "تُرسل إلى أي خدمة تلقائياً."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #64748B; font-size: 12px;")
+        layout.addWidget(note)
+        layout.addStretch(1)
+        return w
+
+    def _refresh_latest_backup(self) -> None:
+        latest = get_last_full_backup()
+        if latest is None:
+            self.latest_backup_label.setText("لم تُنشأ نسخة احتياطية كاملة بعد.")
+            return
+        created = latest["created_at"].replace("T", " ").replace("Z", "")
+        self.latest_backup_label.setText(
+            f"التاريخ: {created}\nالمكان: {latest['path']}"
+        )
+
+    def _choose_backup_destination(self) -> None:
+        selected = QFileDialog.getExistingDirectory(
+            self, "اختر مكان حفظ النسخة الاحتياطية الكاملة"
+        )
+        if not selected:
+            return
+        self._set_portability_busy(True)
+        run_in_background(
+            self,
+            lambda: create_full_backup(Path(selected)),
+            on_result=self._on_full_backup_created,
+            on_error=self._on_full_backup_error,
+            on_finished=lambda: self._set_portability_busy(False),
+        )
+
+    def _on_full_backup_created(self, info) -> None:
+        set_last_full_backup(str(info.archive_path), info.created_at)
+        self._refresh_latest_backup()
+        QMessageBox.information(
+            self,
+            "تم إنشاء النسخة",
+            f"تم إنشاء النسخة الاحتياطية الكاملة بنجاح:\n{info.archive_path.name}",
+        )
+
+    def _on_full_backup_error(self, _error: Exception) -> None:
+        QMessageBox.critical(
+            self,
+            "تعذر إنشاء النسخة",
+            "لم نتمكن من إنشاء النسخة الاحتياطية الكاملة. تأكد من توفر مساحة "
+            "كافية ومن إمكانية الكتابة في المكان المختار، ثم حاول مرة أخرى.",
+        )
+
+    def _choose_restore_archive(self) -> None:
+        selected, _filter = QFileDialog.getOpenFileName(
+            self,
+            "اختر نسخة Teacher Hub الاحتياطية",
+            "",
+            "Teacher Hub Backup (*.teacherhub.zip)",
+        )
+        if not selected:
+            return
+        archive_path = Path(selected)
+        self._validated_restore = None
+        self._set_portability_busy(True)
+        run_in_background(
+            self,
+            lambda: validate_backup_archive(archive_path),
+            on_result=lambda info: setattr(
+                self, "_validated_restore", (archive_path, info)
+            ),
+            on_error=self._on_restore_error,
+            on_finished=self._finish_restore_validation,
+        )
+
+    def _finish_restore_validation(self) -> None:
+        self._set_portability_busy(False)
+        validated = self._validated_restore
+        self._validated_restore = None
+        if validated is not None:
+            self._confirm_restore(*validated)
+
+    def _confirm_restore(self, archive_path: Path, info) -> None:
+        created = info.created_at.replace("T", " ").replace("Z", "")
+        message = (
+            "تم التحقق من النسخة بنجاح.\n\n"
+            f"تاريخ النسخة: {created}\n"
+            f"إصدار البيانات: {info.schema_version}\n"
+            f"عدد ملفات الفواتير وExcel: {info.export_count}\n"
+            "حالة الفحص: سليمة\n\n"
+            "سيتم أولاً إنشاء نسخة أمان كاملة من بياناتك الحالية. بعد ذلك سيُغلق "
+            "التطبيق، وعند فتحه مرة أخرى ستكتمل الاستعادة قبل عرض بياناتك.\n\n"
+            "هل تريد المتابعة؟"
+        )
+        if QMessageBox.question(
+            self, "تأكيد استعادة النسخة", message
+        ) != QMessageBox.Yes:
+            return
+        self._set_portability_busy(True)
+        run_in_background(
+            self,
+            lambda: stage_restore(archive_path),
+            on_result=self._on_restore_staged,
+            on_error=self._on_restore_error,
+            on_finished=lambda: self._set_portability_busy(False),
+        )
+
+    def _set_portability_busy(self, busy: bool) -> None:
+        self.create_backup_btn.setEnabled(not busy)
+        self.restore_backup_btn.setEnabled(not busy)
+
+    def _on_restore_staged(self, _result) -> None:
+        QMessageBox.information(
+            self,
+            "الاستعادة جاهزة",
+            "تم تجهيز الاستعادة وإنشاء نسخة أمان من بياناتك الحالية. "
+            "سيُغلق التطبيق الآن؛ افتحه مرة أخرى لإكمال الاستعادة بأمان.",
+        )
+        QTimer.singleShot(0, QApplication.quit)
+
+    def _on_restore_error(self, _error: Exception) -> None:
+        QMessageBox.critical(
+            self,
+            "تعذر تجهيز الاستعادة",
+            "لم تتغير بياناتك الحالية. قد يكون ملف النسخة غير مكتمل أو غير صالح؛ "
+            "اختر نسخة Teacher Hub أخرى وحاول مرة جديدة.",
+        )
 
     # ----------- ABOUT TAB -----------
     def _build_about_tab(self) -> QWidget:

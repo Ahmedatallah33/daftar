@@ -12,11 +12,15 @@ from app.config import (
     migrate_legacy_data,
 )
 from app.db.engine import init_db
+from app.services.backup_restore_service import apply_pending_restore
 
 
 def initialize_application_data() -> Path | None:
     """Prepare stable user storage, migrate legacy data, and validate the DB."""
     ensure_dirs()
+    # A staged restore is applied before legacy migration, engine initialization,
+    # saved settings, themes, or any database-dependent UI is loaded.
+    apply_pending_restore()
     migrate_legacy_data()
     return init_db()
 

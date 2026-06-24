@@ -3,12 +3,23 @@ param(
     [Parameter(Mandatory = $true)][string]$Python,
     [Parameter(Mandatory = $true)][string]$Label,
     [Parameter(Mandatory = $true)][string]$UserRoot,
-    [Parameter(Mandatory = $true)][string]$LegacyRoot
+    [Parameter(Mandatory = $true)][string]$LegacyRoot,
+    [string]$ExpectedMainWindowTitle = ""
 )
 
 $ErrorActionPreference = "Stop"
 $env:TEACHER_HUB_HOME = $UserRoot
 $env:TEACHER_HUB_LEGACY_ROOT = $LegacyRoot
+if (-not $ExpectedMainWindowTitle) {
+    $ExpectedMainWindowTitle = [Text.Encoding]::UTF8.GetString(
+        [Convert]::FromBase64String(
+            "VGVhY2hlciBIdWIg4oCUINil2K/Yp9ix2Kkg2KfZhNit2LXYtQ=="
+        )
+    )
+}
+$StartupRecoveryTitle = [Text.Encoding]::UTF8.GetString(
+    [Convert]::FromBase64String("2KrYudiw2LEg2KrYtNi62YrZhCBUZWFjaGVyIEh1Yg==")
+)
 
 function Start-And-CloseTeacherHub {
     $processName = [System.IO.Path]::GetFileNameWithoutExtension($Executable)
@@ -19,6 +30,7 @@ function Start-And-CloseTeacherHub {
     $launcherProcess = Start-Process -FilePath $Executable -PassThru
     $windowProcess = $null
     $handle = 0
+    $unexpectedWindowTitles = @()
     for ($attempt = 0; $attempt -lt 180; $attempt++) {
         Start-Sleep -Milliseconds 500
         $launcherProcess.Refresh()
@@ -26,8 +38,24 @@ function Start-And-CloseTeacherHub {
             Get-Process -Name $processName -ErrorAction SilentlyContinue |
                 Where-Object { $existingIds -notcontains $_.Id }
         )
-        $windowProcess = $candidates |
-            Where-Object { $_.MainWindowHandle -ne 0 } |
+        $visibleWindows = @(
+            $candidates |
+                Where-Object { $_.MainWindowHandle -ne 0 }
+        )
+        $unexpectedWindowTitles = @(
+            $visibleWindows |
+                Where-Object { $_.MainWindowTitle -ne $ExpectedMainWindowTitle } |
+                Select-Object -ExpandProperty MainWindowTitle -Unique
+        )
+        $recoveryWindow = $visibleWindows |
+            Where-Object { $_.MainWindowTitle -eq $StartupRecoveryTitle } |
+            Select-Object -First 1
+        if ($recoveryWindow) {
+            $candidates | Stop-Process -Force -ErrorAction SilentlyContinue
+            throw "$Label opened the startup recovery dialog instead of the main window"
+        }
+        $windowProcess = $visibleWindows |
+            Where-Object { $_.MainWindowTitle -eq $ExpectedMainWindowTitle } |
             Select-Object -First 1
         if ($windowProcess) {
             $handle = $windowProcess.MainWindowHandle
@@ -40,12 +68,25 @@ function Start-And-CloseTeacherHub {
     if ($handle -eq 0) {
         Get-Process -Name $processName -ErrorAction SilentlyContinue |
             Stop-Process -Force
-        throw "$Label did not expose a main window"
+        $diagnostic = if ($unexpectedWindowTitles.Count -gt 0) {
+            $unexpectedWindowTitles -join ", "
+        } else {
+            "none"
+        }
+        throw (
+            "$Label did not expose the expected main window " +
+            "'$ExpectedMainWindowTitle'; other visible titles: $diagnostic"
+        )
     }
 
-    $meiDatabases = @(
+    $meiUserFiles = @(
         Get-ChildItem -Path (Join-Path $env:TEMP "_MEI*") `
-            -Filter teacher.db -File -Recurse -ErrorAction SilentlyContinue
+            -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -eq "teacher.db" -or
+                $_.Extension -in ".db", ".pdf", ".xlsx", ".log" -or
+                $_.Name -like "*.teacherhub.zip"
+            }
     )
     $closeRequested = $windowProcess.CloseMainWindow()
     $remaining = @()
@@ -63,7 +104,7 @@ function Start-And-CloseTeacherHub {
     }
     return (
         "pid=$($windowProcess.Id) handle=$handle close_requested=$closeRequested " +
-        "all_processes_exited=True mei_databases=$($meiDatabases.Count)"
+        "all_processes_exited=True mei_user_files=$($meiUserFiles.Count)"
     )
 }
 
@@ -102,7 +143,12 @@ $hashAfterRestart = (
 
 $executableFiles = @(
     Get-ChildItem -Path (Split-Path -Parent $Executable) `
-        -Include teacher.db,*.pdf,*.xlsx -File -Recurse -ErrorAction SilentlyContinue
+        -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -eq "teacher.db" -or
+            $_.Extension -in ".db", ".pdf", ".xlsx", ".log" -or
+            $_.Name -like "*.teacherhub.zip"
+        }
 )
 
 Write-Output "$Label FIRST $first"
