@@ -1,4 +1,4 @@
-$lnk = "C:\Users\moaz-\OneDrive\Desktop\Teacher Hub.lnk"
+$lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Teacher Hub.lnk"
 $sh = New-Object -ComObject WScript.Shell
 $sc = $sh.CreateShortcut($lnk)
 Write-Host "LnkPath:      $lnk"

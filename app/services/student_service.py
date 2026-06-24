@@ -2,7 +2,7 @@ import json
 from typing import Dict, List, Optional
 from sqlalchemy import func
 
-from app.db.engine import get_session
+from app.db.engine import get_session, session_scope
 from app.db.models import Student, Session as SessionModel, Video
 
 
@@ -43,8 +43,6 @@ def create_student(
     if sessions_per_cycle < 1:
         raise ValueError("عدد الحصص في الدورة يجب أن يكون 1 على الأقل")
 
-    s = get_session()
-
     # Derive weekly_schedule + session_time from day_schedules if given
     if day_schedules:
         weekly_schedule = list(day_schedules.keys())
@@ -71,8 +69,9 @@ def create_student(
         notes=notes.strip(),
         is_active=True,
     )
-    s.add(student)
-    s.commit()
+    with session_scope() as s:
+        s.add(student)
+        s.flush()
     return student
 
 
@@ -113,45 +112,45 @@ def update_student(student_id: int, **fields) -> Optional[Student]:
     if fields.get("sessions_per_cycle") is not None and int(fields["sessions_per_cycle"]) < 1:
         raise ValueError("عدد الحصص في الدورة يجب أن يكون 1 على الأقل")
 
-    s = get_session()
-    student = s.get(Student, student_id)
-    if not student:
-        return None
+    with session_scope() as s:
+        student = s.get(Student, student_id)
+        if not student:
+            return None
 
-    # If day_schedules provided, sync weekly_schedule + session_time accordingly
-    if "day_schedules" in fields and isinstance(fields["day_schedules"], dict):
-        ds = fields["day_schedules"]
-        fields["weekly_schedule"] = list(ds.keys())
-        if ds and not fields.get("session_time"):
-            first_list = next(iter(ds.values()), [])
-            fields["session_time"] = first_list[0] if first_list else ""
-        fields["day_schedules"] = json.dumps(_normalize_schedules(ds), ensure_ascii=False)
+        # Keep the legacy schedule fields synchronized with the structured value.
+        if "day_schedules" in fields and isinstance(fields["day_schedules"], dict):
+            ds = fields["day_schedules"]
+            fields["weekly_schedule"] = list(ds.keys())
+            if ds and not fields.get("session_time"):
+                first_list = next(iter(ds.values()), [])
+                fields["session_time"] = first_list[0] if first_list else ""
+            fields["day_schedules"] = json.dumps(
+                _normalize_schedules(ds), ensure_ascii=False
+            )
 
-    if "weekly_schedule" in fields and isinstance(fields["weekly_schedule"], list):
-        fields["weekly_schedule"] = json.dumps(fields["weekly_schedule"])
+        if "weekly_schedule" in fields and isinstance(fields["weekly_schedule"], list):
+            fields["weekly_schedule"] = json.dumps(fields["weekly_schedule"])
 
-    if "custom_fields" in fields and isinstance(fields["custom_fields"], list):
-        fields["custom_fields"] = json.dumps(
-            _sanitize_custom_fields(fields["custom_fields"]), ensure_ascii=False
-        )
+        if "custom_fields" in fields and isinstance(fields["custom_fields"], list):
+            fields["custom_fields"] = json.dumps(
+                _sanitize_custom_fields(fields["custom_fields"]), ensure_ascii=False
+            )
 
-    for key, val in fields.items():
-        if hasattr(student, key):
-            setattr(student, key, val)
-    s.commit()
+        for key, val in fields.items():
+            if hasattr(student, key):
+                setattr(student, key, val)
     return student
 
 
 def delete_student(student_id: int, soft: bool = True) -> bool:
-    s = get_session()
-    student = s.get(Student, student_id)
-    if not student:
-        return False
-    if soft:
-        student.is_active = False
-    else:
-        s.delete(student)
-    s.commit()
+    with session_scope() as s:
+        student = s.get(Student, student_id)
+        if not student:
+            return False
+        if soft:
+            student.is_active = False
+        else:
+            s.delete(student)
     return True
 
 

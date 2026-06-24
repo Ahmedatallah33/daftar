@@ -2,11 +2,17 @@ import sys
 import traceback
 from pathlib import Path
 
-# Early crash logger — if pythonw crashes silently (no console), write a log
-# to the user's temp dir so we have something to inspect.
+# Early crash logger — if pythonw crashes silently, prefer stable per-user logs
+# and retain the temp directory only as a last-resort fallback.
 def _install_crash_logger():
     import tempfile
-    log_path = Path(tempfile.gettempdir()) / "teacher_hub_crash.log"
+    try:
+        from app.config import LOGS_DIR
+
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = LOGS_DIR / "crash.log"
+    except Exception:
+        log_path = Path(tempfile.gettempdir()) / "teacher_hub_crash.log"
 
     def _excepthook(exc_type, exc_value, exc_tb):
         try:
@@ -25,12 +31,14 @@ _install_crash_logger()
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 
-from app.config import FONTS_DIR, ICONS_DIR, ensure_dirs
-from app.db.engine import init_db
-from app.ui.helpers.theme import theme_manager
-from app.ui.main_window import MainWindow
+from app.config import FONTS_DIR, ICONS_DIR
+from app.startup import (
+    initialize_application_data,
+    log_startup_failure,
+    startup_error_message,
+)
 
 
 CAIRO_WEIGHTS = (
@@ -120,13 +128,12 @@ def _set_windows_app_id():
 
 def main():
     if not _acquire_single_instance_lock():
-        return
+        return 0
 
     _set_windows_app_id()
-    ensure_dirs()
-    init_db()
-
-    app = QApplication(sys.argv)
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
     app.setLayoutDirection(Qt.RightToLeft)
 
     app_icon_path = ICONS_DIR / "app.ico"
@@ -134,14 +141,34 @@ def main():
         app.setWindowIcon(QIcon(str(app_icon_path)))
 
     load_fonts(app)
+
+    try:
+        initialize_application_data()
+    except Exception as error:
+        try:
+            log_startup_failure(error)
+        except Exception:
+            pass
+        QMessageBox.critical(
+            None, "تعذر تشغيل Teacher Hub", startup_error_message(error)
+        )
+        return 1
+
+    # Import and initialize database-dependent UI state only after the guarded
+    # startup validation above has succeeded.
+    from app.ui.helpers.theme import theme_manager
+
+    theme_manager.load_from_settings()
     theme_manager.apply(app)
+
+    from app.ui.main_window import MainWindow
 
     window = MainWindow()
     window.showNormal()
     window.raise_()
     window.activateWindow()
-    sys.exit(app.exec())
+    return app.exec()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

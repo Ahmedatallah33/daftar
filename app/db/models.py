@@ -79,6 +79,7 @@ class Invoice(Base):
     amount = Column(Float, default=0.0)
     pdf_path = Column(String, default="")
     notes = Column(Text, default="")
+    cycle_signature = Column(Text, default="")
     is_paid = Column(Boolean, default=False)
     paid_at = Column(DateTime, nullable=True)
 

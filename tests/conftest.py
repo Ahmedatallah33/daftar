@@ -24,8 +24,10 @@ def temp_db(tmp_path, monkeypatch):
 
     invoices_dir = tmp_path / "invoices"
     exports_dir = tmp_path / "exports"
+    backups_dir = tmp_path / "backups"
     invoices_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
+    backups_dir.mkdir(parents=True, exist_ok=True)
 
     # Rebind config paths that the services captured at import time.
     import app.services.billing_service as billing
@@ -33,7 +35,7 @@ def temp_db(tmp_path, monkeypatch):
     import app.services.excel_service as excel
 
     monkeypatch.setattr(billing, "DB_PATH", db_file, raising=False)
-    monkeypatch.setattr(billing, "DATA_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(billing, "BACKUPS_DIR", backups_dir, raising=False)
     monkeypatch.setattr(pdf, "INVOICES_DIR", invoices_dir, raising=False)
     monkeypatch.setattr(excel, "EXPORTS_DIR", exports_dir, raising=False)
 

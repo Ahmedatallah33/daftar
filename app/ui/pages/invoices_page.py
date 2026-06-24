@@ -14,7 +14,10 @@ from app.services.billing_service import (
 from app.services.launcher import open_path
 from app.ui.helpers.icons import icon, ICONS
 from app.ui.helpers.theme import theme_manager
-from app.ui.pages.billing_page import InvoicePostIssueDialog
+from app.ui.pages.billing_page import (
+    InvoicePostIssueDialog,
+    LegacyInvoiceReconciliationDialog,
+)
 
 
 class InvoicesPage(QWidget):
@@ -165,7 +168,13 @@ class InvoicesPage(QWidget):
             toggle_btn.setIconSize(QSize(14, 14))
             toggle_btn.setToolTip("تبديل حالة الدفع")
             toggle_btn.setFixedSize(32, 32)
-            toggle_btn.clicked.connect(lambda _=False, i=inv.id, p=inv.is_paid: self._toggle(i, not p))
+            legacy_unlinked = not inv.is_paid and not (
+                inv.cycle_signature or ""
+            ).strip()
+            toggle_btn.clicked.connect(
+                lambda _=False, i=inv.id, p=inv.is_paid, legacy=legacy_unlinked:
+                self._toggle(i, not p, legacy)
+            )
             al.addWidget(toggle_btn)
 
             del_btn = QPushButton()
@@ -214,7 +223,12 @@ class InvoicesPage(QWidget):
         )
         dlg.exec()
 
-    def _toggle(self, invoice_id: int, paid: bool):
+    def _toggle(self, invoice_id: int, paid: bool, legacy_unlinked: bool = False):
+        if paid and legacy_unlinked:
+            LegacyInvoiceReconciliationDialog(
+                invoice_id, self, self
+            ).exec()
+            return
         mark_invoice_paid(invoice_id, paid)
         self.data_changed.emit()
 

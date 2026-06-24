@@ -4,7 +4,7 @@
 > المعلّم الأونلاين. تغطي البنية، نموذج البيانات، طبقة الخدمات، الواجهة، قواعد العمل،
 > الأداء، الجودة، التشغيل، والتحزيم.
 >
-> الإصدار: 2.0 — آخر تحديث للوثيقة: 2026-06-20
+> الإصدار: 2.0 — آخر تحديث للوثيقة: 2026-06-24
 
 ---
 
@@ -47,7 +47,7 @@
 - **تقارير شهرية** بالدخل وعدد الحصص وأكثر الطلاب نشاطاً.
 
 الفلسفة التشغيلية: **محلّي أولاً (offline-first)** — كل البيانات في ملف قاعدة بيانات
-واحد على جهاز المعلّم (`data/teacher.db`)، بلا خادم ولا حساب ولا إنترنت إلزامي (الإنترنت
+واحد على جهاز المعلّم (`%LOCALAPPDATA%\TeacherHub\data\teacher.db`)، بلا خادم ولا حساب ولا إنترنت إلزامي (الإنترنت
 يُستخدم فقط لفتح Zoom/واتساب).
 
 النموذج المالي المحوري: **دورة من 8 حصص** — عند إكمال الطالب 8 حصص محتسَبة يظهر كـ
@@ -120,7 +120,7 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
 
 ```
 برمجه/
-├── main.py                     # نقطة الدخول (148 سطر)
+├── main.py                     # نقطة الدخول والاستعادة المرئية عند فشل الإقلاع
 ├── README.md                   # دليل سريع
 ├── DOCUMENTATION.md            # هذه الوثيقة
 ├── BUGS_REPORT.md              # تقرير اكتشاف/إصلاح الأخطاء
@@ -128,66 +128,66 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
 ├── requirements-dev.txt        # اعتماديات التطوير/الاختبار
 ├── pyproject.toml              # إعداد ruff / mypy / pytest
 ├── app/
-│   ├── config.py               # الثوابت والمسارات (34)
+│   ├── config.py               # الثوابت والمسارات
+│   ├── startup.py              # الترحيل والتحقق ورسائل الاستعادة
 │   ├── db/
-│   │   ├── models.py           # نماذج ORM (102)
-│   │   └── engine.py           # المحرّك، الجلسات، الهجرات (90)
+│   │   ├── models.py           # نماذج ORM
+│   │   ├── engine.py           # المحرّك، الجلسات، تصنيف المخطط والهجرات
+│   │   └── safety.py           # فحص السلامة ونسخ SQLite online
 │   ├── services/               # منطق العمل
-│   │   ├── student_service.py  # طلاب + جداول + عدّ (269)
-│   │   ├── billing_service.py  # فواتير + مستحقات + تقارير + نسخ احتياطي (177)
-│   │   ├── session_service.py  # حصص وفيديوهات (112)
-│   │   ├── settings_service.py # إعدادات key/value + قوالب (122)
-│   │   ├── group_service.py    # مجموعات واتساب (70)
-│   │   ├── pdf_service.py      # توليد فاتورة PDF (264)
-│   │   ├── excel_service.py    # تصدير Excel (126)
-│   │   ├── notification_service.py # تذكيرات (66)
-│   │   └── launcher.py         # فتح Zoom/واتساب/الحافظة (65)
+│   │   ├── student_service.py  # طلاب + جداول + عدّ
+│   │   ├── billing_service.py  # فواتير + مستحقات + تقارير + نسخ احتياطي
+│   │   ├── session_service.py  # حصص وفيديوهات
+│   │   ├── settings_service.py # إعدادات key/value + قوالب
+│   │   ├── group_service.py    # مجموعات واتساب
+│   │   ├── pdf_service.py      # توليد فاتورة PDF
+│   │   ├── excel_service.py    # تصدير Excel
+│   │   ├── notification_service.py # تذكيرات
+│   │   └── launcher.py         # فتح Zoom/واتساب/الحافظة
 │   ├── ui/
-│   │   ├── main_window.py      # النافذة الرئيسية + التنقّل (310)
+│   │   ├── main_window.py      # النافذة الرئيسية + التنقّل
 │   │   ├── pages/              # الصفحات الست + الحوارات
-│   │   │   ├── schedule_page.py     (556)
-│   │   │   ├── students_page.py     (247)
-│   │   │   ├── billing_page.py      (496)
-│   │   │   ├── invoices_page.py     (228)
-│   │   │   ├── reports_page.py      (385)
-│   │   │   ├── groups_page.py       (435)
-│   │   │   ├── manage_students.py   (1051) ← الأكبر
-│   │   │   └── settings_dialog.py   (255)
+│   │   │   ├── schedule_page.py
+│   │   │   ├── students_page.py
+│   │   │   ├── billing_page.py
+│   │   │   ├── invoices_page.py
+│   │   │   ├── reports_page.py
+│   │   │   ├── groups_page.py
+│   │   │   ├── manage_students.py
+│   │   │   └── settings_dialog.py
 │   │   ├── widgets/
-│   │   │   ├── student_card.py      (147)
-│   │   │   ├── student_detail.py    (331)
-│   │   │   └── whatsapp_menu.py     (157)
+│   │   │   ├── student_card.py
+│   │   │   ├── student_detail.py
+│   │   │   └── whatsapp_menu.py
 │   │   ├── helpers/
-│   │   │   ├── theme.py             (84)  مدير الثيم
-│   │   │   ├── icons.py             (87)  أيقونات + تخزين مؤقت
-│   │   │   ├── worker.py            (70)  تشغيل بالخلفية (QThreadPool)
-│   │   │   ├── time_format.py       (26)  تنسيق وقت عربي 12-ساعة
-│   │   │   └── shadow.py            (21)  ظلال البطاقات
+│   │   │   ├── theme.py             # مدير الثيم
+│   │   │   ├── icons.py             # أيقونات + تخزين مؤقت
+│   │   │   ├── worker.py            # تشغيل بالخلفية (QThreadPool)
+│   │   │   ├── time_format.py       # تنسيق وقت عربي 12-ساعة
+│   │   │   └── shadow.py            # ظلال البطاقات
 │   │   └── styles/
-│   │       ├── app_light.qss        (608) ثيم فاتح
-│   │       └── app_dark.qss         (549) ثيم داكن
+│   │       ├── app_light.qss        # ثيم فاتح
+│   │       └── app_dark.qss         # ثيم داكن
 │   └── resources/
 │       ├── fonts/  (Cairo-{Regular,Medium,SemiBold,Bold}.ttf)
 │       └── icons/  (app.ico, app.png)
-├── tests/                      # 6 ملفات، 59 اختباراً
+├── tests/                      # اختبارات الخدمات والسلامة والإقلاع والترحيل
 │   ├── conftest.py             # عزل قاعدة مؤقتة لكل اختبار
 │   └── test_*.py
-├── scripts/                    # أدوات Windows (اختصار، تشخيص، أيقونة)
-├── data/
-│   ├── teacher.db              # قاعدة البيانات الحيّة
-│   ├── backups/                # نسخ احتياطية مؤرّخة
-│   └── test_reset.db
-└── exports/
-    └── invoices/               # فواتير PDF المُصدَّرة
+├── scripts/                    # أدوات Windows والتحقق من الحزم
+├── data/                       # موقع قديم فقط؛ مصدر ترحيل ولا يحتوي القاعدة الحيّة
+└── exports/                    # موقع قديم فقط؛ مصدر ترحيل ولا يستقبل صادرات جديدة
 ```
 
-إجمالي كود التطبيق: **~1954 سطر Python** (عدا الاختبارات والمكتبات).
+بيانات التشغيل الحيّة خارج المستودع تحت `%LOCALAPPDATA%\TeacherHub\`:
+`data\teacher.db`، و`backups\`، و`exports\` (Excel و`invoices\`)، و`logs\`.
 
 ---
 
 ## 6. نموذج البيانات (Schema)
 
-قاعدة البيانات SQLite عبر SQLAlchemy ORM (`app/db/models.py`). ستة جداول:
+قاعدة البيانات SQLite عبر SQLAlchemy ORM (`app/db/models.py`). ستة جداول ORM، إضافة
+إلى جدول `schema_meta` لإصدار المخطط:
 
 ### 6.1 `Student` (الطلاب)
 | الحقل | النوع | ملاحظات |
@@ -224,7 +224,9 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
 ### 6.4 `Invoice` (الفواتير)
 `id`, `student_id` (FK), `issued_at` (DateTime=now), `sessions_count` (Int),
 `videos_count` (Int), `amount` (Float), `pdf_path` (String), `notes` (Text),
-`is_paid` (Bool=False), `paid_at` (DateTime, nullable).
+`cycle_signature` (Text يحدّد معرّفات سجلات الدورة المرتبطة)، `is_paid` (Bool=False)،
+`paid_at` (DateTime, nullable). القيمة الفارغة في فاتورة غير مدفوعة تعني
+**فاتورة قديمة غير مرتبطة** وتتطلّب تسوية صريحة.
 
 ### 6.5 `Setting` (الإعدادات)
 متجر مفتاح/قيمة: `key` (String PK), `value` (Text — قيمة JSON مُسلسَلة).
@@ -233,21 +235,29 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
 `id`, `name` (String 120, NOT NULL), `invite_link` (String 255, NOT NULL),
 `notes` (Text), `created_at` (DateTime=now).
 
+### 6.7 `schema_meta` (إصدار المخطط)
+جدول مفتاح/قيمة يُنشأ بعد اكتمال المخطط. القيمة `schema_version=2` لا تُعتمد إلا داخل
+معاملة الهجرة وبعد نجاح التحقق البنيوي النهائي؛ أي فشل يُبقي الإصدار السابق.
+
 ---
 
 ## 7. طبقة قاعدة البيانات
 
 ملف `app/db/engine.py`:
 
-- **المحرّك**: `create_engine(DB_URL, future=True)` حيث `DB_URL = sqlite:///data/teacher.db`.
+- **المحرّك**: SQLite تحت `%LOCALAPPDATA%\TeacherHub` مع مهلة انتظار صريحة وتفعيل
+  `foreign_keys=ON` لكل اتصال.
 - **الجلسات**: `scoped_session(sessionmaker(autoflush=False, expire_on_commit=False))`.
   - `scoped_session` = جلسة واحدة لكل خيط (thread-local)، يعاد استخدامها عبر `get_session()`.
   - `expire_on_commit=False` يبقي الكائنات قابلة للقراءة بعد `commit` (مهم لتمريرها للواجهة).
 - **هجرات خفيفة** (`_apply_column_migrations`): عند الإقلاع تُضاف الأعمدة الناقصة عبر
   `ALTER TABLE ... ADD COLUMN` لجداول موجودة (تطوّر تدريجي للسكيمة دون أدوات هجرة ثقيلة).
   القائمة `_MIGRATIONS` تشمل أعمدة أُضيفت لاحقاً (مثل `is_free`, `paid_at`, `day_schedules`,
-  `custom_fields`، إلخ).
-- **`init_db()`**: ينشئ الجداول (`create_all`) ثم يطبّق الهجرات. يُستدعى من `main.py`.
+  `custom_fields`, `cycle_signature`، إلخ).
+- **تصنيف المخطط**: قاعدة بلا جداول تطبيق = جديدة؛ قاعدة قديمة مع كل الجداول الأساسية
+  = معروفة وقابلة للهجرة؛ وجود بعض الجداول مع فقد أي جدول أساسي = مخطط جزئي مرفوض.
+- **`init_db()`**: يفحص السلامة والمخطط، يأخذ نسخة verified قبل تعديل قاعدة قديمة،
+  ويطبّق الأعمدة والتحقق وكتابة الإصدار داخل معاملة واحدة قبل فتح الواجهة الرئيسية.
 - **`get_session()`**: يعيد الجلسة الحالية (المشتركة).
 - **`configure_engine(db_url)`**: يعيد ربط المحرّك والجلسات بقاعدة أخرى — تستخدمه
   الاختبارات لتوجيه كل الوصول لقاعدة مؤقتة معزولة عن القاعدة الحقيقية.
@@ -282,10 +292,18 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
 ### 8.3 `billing_service.py`
 - `students_with_dues()` — يستخدم خرائط العدّ المُجمّعة؛ يُرجع من بلغوا حدّ الدورة مع
   `amount = round(count × price, 2)` (تقريب نقدي لخانتين). يتجاهل `cycle ≤ 0`.
-- `reset_cycle(id)` — يجعل حصص/فيديوهات الطالب `counted=False` لبدء دورة جديدة.
+- `reset_cycle(id)` — يجعل حصص/فيديوهات الطالب `counted=False`، ويمنع التصفير العرضي
+  عند وجود فاتورة غير مدفوعة.
+- `collect_payment_and_reset(...)` — يربط الفاتورة بالدورة، يسجّل الدفع، ويصفّر الدورة
+  في معاملة ذرّية واحدة.
+- الفاتورة القديمة غير المدفوعة ذات `cycle_signature` فارغ تمنع الإصدار/التصفير العام
+  وتظهر عبر **«تسوية فاتورة قديمة»**. يمكن تسجيل دفعها فقط بلا تغيير النشاط، أو ربطها
+  بالدورة ثم التحصيل والتصفير ذرياً إذا تطابقت أعداد الحصص والفيديوهات تماماً.
 - `record_invoice(...)`, `list_invoices(only_paid=None)`, `mark_invoice_paid(id, paid)`,
   `delete_invoice(id)`.
-- `backup_database()` — نسخة احتياطية مؤرّخة في `data/backups/`.
+- `backup_database()` — نسخة SQLite online فريدة ومفحوصة في
+  `%LOCALAPPDATA%\TeacherHub\backups\`.
+  نطاقها قاعدة SQLite فقط؛ لا تضم ملفات PDF أو XLSX المُصدَّرة.
 - `reset_all_activity(keep_students=True)` — **تصفير شامل** بعد أخذ نسخة احتياطية: يحذف
   كل الحصص/الفيديوهات/الفواتير (واختيارياً الطلاب)، ويعيد عدّادات ما حُذف.
 - `monthly_stats(year, month)` — دخل/محصّل/معلّق/عدد حصص/أكثر 5 طلاب عبر تجميعات SQL.
@@ -294,7 +312,8 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
 متجر key/value يُسلسِل القيم JSON. واجهات مريحة: `get_theme/set_theme`,
 `get_templates/save_templates` (قوالب واتساب الافتراضية مضمّنة)،
 `get/set_notifications_enabled`, `get/set_notification_minutes`,
-`get/set_invoice_message_template`. يتعامل بهدوء مع القيم التالفة وأخطاء القاعدة.
+`get/set_invoice_message_template`. القيم النصية التالفة تعود بصورة آمنة، بينما أخطاء
+الكتابة وأخطاء سلامة القاعدة تُرفع إلى طبقة الإقلاع/الواجهة ولا تُخفى.
 
 ### 8.5 `group_service.py`
 `validate_invite_link` (regex: `^https://chat\.whatsapp\.com/[A-Za-z0-9]+/?$`) + CRUD
@@ -335,8 +354,9 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
   مُمرَّراً من خريطة)، `QuickActionsPopup` (Zoom/تسجيل/واتساب/تراجع).
 - **`students_page.py`**: شبكة بطاقات `StudentCard`، بحث/تصفية، إعادة ترتيب الشبكة
   مُهدّأة (debounce 80ms عبر `QTimer`)، إشارة `data_changed`.
-- **`billing_page.py`**: بطاقات المستحقّين، `_issue_pdf` يولّد PDF **في الخلفية**
-  (`run_in_background`)، و`InvoicePostIssueDialog` (رسالة واتساب قابلة للتعديل).
+- **`billing_page.py`**: بطاقات المستحقّين، `_issue_pdf` يولّد PDF **في الخلفية**،
+  و`InvoicePostIssueDialog`، وحوار **«تسوية فاتورة قديمة»** الذي يعرض بيانات الفاتورة
+  والأعداد التاريخية والحالية ويمنع التصفير عند عدم التطابق.
 - **`invoices_page.py`**: جدول الفواتير + إجراءات لكل صف + بطاقات إجمالي.
 - **`reports_page.py`**: بطاقات إحصائية + جدول أكثر الطلاب + "منطقة الخطر"
   (`RestartConfirmDialog` يتطلّب كتابة عبارة تأكيد + خيار الاحتفاظ بالطلاب).
@@ -373,10 +393,11 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
 3. **الاستحقاق**: يظهر الطالب كـ"مستحق" حين `counted_sessions ≥ sessions_per_cycle`
    (بشرط `sessions_per_cycle > 0`).
 4. **المبلغ** = `عدد الحصص المحتسبة × سعر الحصة`، **مقرّباً لخانتين** عشريتين.
-5. **التصفير بعد التحصيل**: `reset_cycle` يجعل الحصص/الفيديوهات `counted=False` (تبقى في
-   السجلّ التاريخي لكنها تخرج من الدورة الحالية).
-6. **التصفير الشامل**: `reset_all_activity` يأخذ نسخة احتياطية أولاً ثم يمسح النشاط —
-   لا شيء يُفقد نهائياً.
+5. **التصفير بعد التحصيل**: الدفع والتصفير المرتبطان بفاتورة حديثة يحدثان ذرياً. يمنع
+   `reset_cycle` وجود أي فاتورة غير مدفوعة، ولا توجد آلية تجاوز عامة للفاتورة القديمة.
+6. **التصفير الشامل**: `reset_all_activity` ينشئ نسخة محلية متحقّقاً منها لبيانات
+   SQLite قبل مسح النشاط. يجب حماية النسخة نفسها؛ فهي محلية ولا تشمل ملفات PDF أو
+   XLSX المُصدَّرة.
 7. **الحذف الناعم**: حذف الطالب افتراضياً = `is_active=False` (يختفي من القوائم النشطة
    ويبقى في التصدير الكامل والتقارير التاريخية).
 8. **العملة**: `ج.م` (جنيه مصري) — `CURRENCY` في `config.py`.
@@ -396,7 +417,8 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
   - **`_safe_filename`**: يبني اسم ملف آمن — يُبقي الأحرف الأبجدية الرقمية والعربية
     (`ord > 127`) ويزيل الفواصل و`..`/`/` (يمنع الخروج من المجلد).
   - تصميم الفاتورة: عنوان، رقم/تاريخ، جدول بيانات الطالب، جدول الحصص، جدول الفيديوهات
-    (إن وُجدت)، ملاحظات، صندوق الإجمالي المُبرَز، وتذييل شكر. تُحفظ في `exports/invoices/`
+    (إن وُجدت)، ملاحظات، صندوق الإجمالي المُبرَز، وتذييل شكر. تُحفظ في
+    `%LOCALAPPDATA%\TeacherHub\exports\invoices\`
     باسم `{اسم الطالب}_{التاريخ_الوقت}.pdf`.
 
 ---
@@ -458,16 +480,16 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
 
 ## 16. الجودة: الاختبارات والفحص والتحقق
 
-- **اختبارات pytest**: 6 ملفات، **59 اختباراً** تغطّي طبقة الخدمات (فواتير، حصص، طلاب،
-  إعدادات، مجموعات، PDF/Excel) + اختبارات تكافؤ بين دوال العدّ المفردة والمجمّعة.
+- **اختبارات pytest**: تغطّي طبقة الخدمات وPDF/Excel، إضافة إلى مسارات البيانات،
+  الهجرة، النسخ الاحتياطي، سلامة المعاملات، والذرّية المالية.
 - **العزل**: `tests/conftest.py` فيه fixture تلقائي (`autouse`) يوجّه **كل** اختبار إلى
-  قاعدة SQLite مؤقتة ومجلدات إخراج مؤقتة — لا يُمَسّ `data/teacher.db` الحقيقي أبداً.
+  قاعدة SQLite مؤقتة ومجلدات إخراج مؤقتة — لا تُمس قاعدة المستخدم الحقيقية أبداً.
 - **الفحص الثابت**: `ruff` (E/F/W/B) نظيف، و`mypy` (الأخطاء المتبقّية إيجابيات كاذبة من
   SQLAlchemy بلا إضافتها).
 - **التحقّق من المدخلات**: في `create_student`/`update_student` (اسم/سعر/دورة) مع رسائل
   عربية، تلتقطها الواجهة في `manage_students._save`.
-- **مُسجّل الأعطال**: `main.py` يثبّت `sys.excepthook` يكتب الاستثناءات غير المعالَجة إلى
-  `%TEMP%/teacher_hub_crash.log` (مفيد مع `pythonw` بلا نافذة طرفية).
+- **مُسجّل الأعطال**: `main.py` يكتب الاستثناءات غير المعالَجة إلى
+  `%LOCALAPPDATA%\TeacherHub\logs\crash.log`، مع `%TEMP%` كحل أخير فقط.
 - **الإعداد**: `pyproject.toml` يضبط ruff/mypy/pytest؛ `requirements-dev.txt` للأدوات.
 
 أوامر التشغيل:
@@ -482,10 +504,10 @@ app/config.py  ← الثوابت والمسارات (يعتمد عليها ال
 
 ## 17. الإعدادات والمسارات
 
-`app/config.py` يعرّف كل المسارات نسبةً لجذر المشروع:
-- `DATA_DIR=data/`, `EXPORTS_DIR=exports/`, `INVOICES_DIR=exports/invoices/`,
-  `RESOURCES_DIR`, `FONTS_DIR`, `ICONS_DIR`, `STYLES_DIR`.
-- `DB_PATH=data/teacher.db`, `DB_URL=sqlite:///...`.
+`app/config.py` يفصل موارد التطبيق للقراءة عن بيانات المستخدم القابلة للكتابة:
+- البيانات والنسخ والفواتير والسجلات تحت `%LOCALAPPDATA%\TeacherHub\`.
+- `RESOURCES_DIR`, `FONTS_DIR`, `ICONS_DIR`, `STYLES_DIR` تُقرأ من المصدر أو حزمة
+  PyInstaller، ولا تستقبل بيانات مستخدم.
 - ثوابت العمل: `TEACHER_NAME="المعلم"`, `CURRENCY="ج.م"`,
   `DEFAULT_SESSIONS_PER_CYCLE=8`.
 - أيام الأسبوع: قائمة `WEEKDAYS` (SAT..FRI) مع أكواد وأسماء عربية، و`WEEKDAY_AR` (قاموس).
@@ -505,8 +527,10 @@ pip install -r requirements.txt
 # 2) التشغيل
 python main.py
 ```
-- عند أول تشغيل تُنشأ `data/teacher.db` تلقائياً.
-- يُفضّل وجود خط Cairo في `app/resources/fonts/` لأفضل عرض للفواتير.
+- عند أول تشغيل تُنشأ `%LOCALAPPDATA%\TeacherHub\data\teacher.db` تلقائياً، مع ترحيل
+  نسخي آمن للبيانات القديمة إن وُجدت.
+- خطوط Cairo (Regular/Medium/SemiBold/Bold) مرفقة في `app/resources/fonts/` وتُضمَّن
+  في حزمتَي PyInstaller؛ لا يحتاج المستخدم إلى تنزيل خط يدوياً.
 - **قفل نسخة واحدة**: `main.py` يستخدم Mutex على Windows لمنع تشغيل أكثر من نسخة؛ إن
   وُجدت نسخة يحضِر نافذتها للأمام.
 - **هوية التطبيق**: `SetCurrentProcessExplicitAppUserModelID` ليستخدم شريط المهام أيقونة
@@ -517,8 +541,17 @@ python main.py
 ## 19. التحزيم والنشر (Windows)
 
 - **PyInstaller** لبناء exe مستقل:
+شغّل الأوامر التالية من جذر المشروع.
+
 ```bash
-pyinstaller --onefile --windowed ^
+pyinstaller --clean --noconfirm --onefile --windowed --name TeacherHub ^
+  --add-data "app/resources;app/resources" ^
+  --add-data "app/ui/styles;app/ui/styles" ^
+  main.py
+```
+ولبناء مجلد مستقل:
+```bash
+pyinstaller --clean --noconfirm --onedir --windowed --name TeacherHub ^
   --add-data "app/resources;app/resources" ^
   --add-data "app/ui/styles;app/ui/styles" ^
   main.py
@@ -528,21 +561,24 @@ pyinstaller --onefile --windowed ^
   - `verify_shortcut.ps1` — التحقّق من الاختصار.
   - `diag_launch.ps1` — تشخيص مشاكل الإقلاع.
   - `make_icon.py` — توليد أيقونة التطبيق (`app.ico`).
+  - `verify_packaged_persistence.ps1` — تحقق إغلاق/إعادة تشغيل وحفظ قاعدة الحزمة.
 - يُشغَّل عادةً عبر `pythonw.exe` (بلا نافذة طرفية) لتجربة سطح مكتب نظيفة.
 
 ---
 
 ## 20. قيود معروفة وملاحظات
 
-- **محلّي فقط**: لا مزامنة سحابية ولا تعدّد مستخدمين؛ البيانات على جهاز واحد (انسخ
-  `data/` احتياطياً يدوياً للأمان، إضافةً للنسخ التلقائية قبل التصفير الشامل).
+- **محلّي فقط**: لا مزامنة سحابية ولا تعدّد مستخدمين؛ البيانات على جهاز واحد تحت
+  `%LOCALAPPDATA%\TeacherHub\`. نسخة قاعدة البيانات لا تشمل صادرات PDF/XLSX.
 - **واتساب**: لا إرفاق PDF برمجياً، والمجموعات تتطلّب لصقاً يدوياً (قيد منصّة واتساب).
 - **أخطاء mypy المتبقّية إيجابيات كاذبة**: ناتجة عن عدم استخدام إضافة SQLAlchemy لـ mypy
   (مثل `Base is not valid as a type` و`Column[...]`)، وليست أخطاء وقت تشغيل.
 - **التوقيت محلّي (naive)**: كل التواريخ بتوقيت الجهاز المحلّي (`datetime.now`) — مناسب
   لتطبيق أحادي الجهاز.
-- **التصدير/الاسترجاع**: لا توجد واجهة لاستيراد نسخة احتياطية؛ الاسترجاع يدوي باستبدال
-  ملف القاعدة من `data/backups/`.
+- **الاسترجاع اليدوي**: لا توجد واجهة استعادة. يجب إغلاق التطبيق وكل عملياته، حفظ نسخة
+  من `data\teacher.db` الحالي، والتحقق من `PRAGMA integrity_check` للنسخة المراد
+  استعادتها. لا تُستخدم ملفات `teacher.db-wal` أو `teacher.db-shm` القديمة مع القاعدة
+  المستعادة. بعد التشغيل يجب التحقق من إجمالي الطلاب والحصص والفواتير والمدفوعات.
 
 ---
 

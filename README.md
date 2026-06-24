@@ -13,7 +13,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-3. **(مهم للفواتير)** حمّل خط Cairo من [Google Fonts](https://fonts.google.com/specimen/Cairo) وضع ملف `Cairo-Regular.ttf` داخل `app/resources/fonts/`.
+3. خطوط Cairo العربية مرفقة داخل `app/resources/fonts/` وتُضمَّن في حزم PyInstaller.
 
 ## التشغيل
 
@@ -21,9 +21,9 @@ pip install -r requirements.txt
 python main.py
 ```
 
-- عند أول تشغيل سيُنشأ ملف `data/teacher.db` تلقائياً.
+- عند أول تشغيل سيُنشأ ملف `%LOCALAPPDATA%\TeacherHub\data\teacher.db` تلقائياً.
 - افتح **إدارة الطلاب** من الشريط الجانبي لإضافة طلابك (الاسم، رابط Zoom، رقم واتساب، السعر، أيام الحصص، وقت الحصة).
-- الفواتير تُحفظ في `exports/invoices/`.
+- الفواتير تُحفظ في `%LOCALAPPDATA%\TeacherHub\exports\invoices\`.
 
 ## الميزات
 
@@ -34,14 +34,28 @@ python main.py
 
 ## التحزيم (.exe مستقل)
 
+شغّل الأوامر التالية من جذر المشروع.
+
+ملف واحد:
+
 ```bash
-pyinstaller --onefile --windowed ^
+pyinstaller --clean --noconfirm --onefile --windowed --name TeacherHub ^
   --add-data "app/resources;app/resources" ^
   --add-data "app/ui/styles;app/ui/styles" ^
   main.py
 ```
 
-الملف الناتج في `dist/main.exe`.
+مجلد مستقل:
+
+```bash
+pyinstaller --clean --noconfirm --onedir --windowed --name TeacherHub ^
+  --add-data "app/resources;app/resources" ^
+  --add-data "app/ui/styles;app/ui/styles" ^
+  main.py
+```
+
+البيانات القابلة للكتابة تبقى دائماً تحت `%LOCALAPPDATA%\TeacherHub\`، وليست
+داخل مجلد التحزيم أو بجانب الملف التنفيذي.
 
 ## هيكل المشروع
 
@@ -50,5 +64,20 @@ pyinstaller --onefile --windowed ^
 - `app/db/` — نماذج SQLAlchemy وإنشاء قاعدة البيانات
 - `app/services/` — منطق الأعمال (طلاب، حصص، فواتير، PDF، روابط)
 - `app/ui/` — واجهات المستخدم (نافذة رئيسية، صفحات، ودجتس، أنماط)
-- `data/teacher.db` — قاعدة البيانات المحلية (تُنشأ تلقائياً)
-- `exports/invoices/` — فواتير PDF المُصدَرة
+- `%LOCALAPPDATA%\TeacherHub\data\teacher.db` — قاعدة البيانات المحلية
+- `%LOCALAPPDATA%\TeacherHub\backups\` — النسخ الاحتياطية المتحقّق من سلامتها
+- `%LOCALAPPDATA%\TeacherHub\exports\` — صادرات Excel
+- `%LOCALAPPDATA%\TeacherHub\exports\invoices\` — فواتير PDF المُصدَرة
+- `%LOCALAPPDATA%\TeacherHub\logs\` — سجلات التشغيل والترحيل
+
+## النسخ الاحتياطي والاستعادة
+
+- النسخ الاحتياطية تحت `%LOCALAPPDATA%\TeacherHub\backups\` تحتوي قاعدة SQLite فقط؛
+  ملفات PDF وXLSX المُصدَّرة ليست جزءاً من نسخة القاعدة.
+- قبل الاستعادة اليدوية: أغلق التطبيق وكل عملياته، احتفظ بنسخة من قاعدة البيانات
+  الحالية، تحقّق من سلامة النسخة المراد استعادتها، ولا تُعِد استخدام ملفات
+  `teacher.db-wal` أو `teacher.db-shm` القديمة. بعد الاستعادة شغّل التطبيق وتحقّق من
+  إجمالي الطلاب والحصص والفواتير والمدفوعات.
+- يتتبّع `schema_meta` إصدار المخطط. الفواتير الحديثة ترتبط بالدورة عبر
+  `cycle_signature`، أما الفاتورة القديمة غير المرتبطة فتظهر في مسار صريح باسم
+  **«تسوية فاتورة قديمة»**.

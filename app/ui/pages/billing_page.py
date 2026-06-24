@@ -10,7 +10,13 @@ from PySide6.QtWidgets import (
 
 from app.config import CURRENCY
 from app.services.billing_service import (
-    students_with_dues, reset_cycle, record_invoice
+    collect_payment_and_reset,
+    legacy_invoice_reconciliation_data,
+    mark_legacy_invoice_paid_only,
+    record_invoice,
+    reconcile_legacy_invoice_and_reset,
+    reset_cycle,
+    students_with_dues,
 )
 from app.services.pdf_service import generate_invoice
 from app.services.launcher import open_path, open_whatsapp, render_template
@@ -27,7 +33,8 @@ class DueCard(QFrame):
         self.data = data
         self.parent_page = parent_page
         self.last_invoice_path = None
-        self.last_invoice_id = None
+        self.invoice_id = data.get("invoice_id")
+        self.legacy_invoice_ids = list(data.get("legacy_invoice_ids") or [])
         self.setObjectName("Card")
         self.setProperty("status", "due")
         add_shadow(self, blur=20, y_offset=4, opacity=24)
@@ -71,13 +78,27 @@ class DueCard(QFrame):
         pdf_btn.clicked.connect(self._issue_pdf)
         actions.addWidget(pdf_btn)
         self.pdf_btn = pdf_btn
+        if self.invoice_id is not None or self.legacy_invoice_ids:
+            self.pdf_btn.setEnabled(False)
+            self.pdf_btn.setToolTip(
+                "سوِّ الفاتورة القديمة أولاً"
+                if self.legacy_invoice_ids
+                else "تم إصدار فاتورة غير مدفوعة لهذه الدورة"
+            )
 
-        reset_btn = QPushButton("  تصفير العداد (تم التحصيل)")
+        reset_btn = QPushButton(
+            "  تسوية فاتورة قديمة"
+            if self.legacy_invoice_ids
+            else "  تصفير العداد (تم التحصيل)"
+        )
         reset_btn.setObjectName("SuccessBtn")
         reset_btn.setIcon(icon(ICONS["check"], color="#FFFFFF"))
         reset_btn.setIconSize(QSize(16, 16))
-        reset_btn.clicked.connect(self._reset)
+        reset_btn.clicked.connect(
+            self._reconcile_legacy if self.legacy_invoice_ids else self._reset
+        )
         actions.addWidget(reset_btn)
+        self.reset_btn = reset_btn
 
         actions.addStretch(1)
         layout.addLayout(actions)
@@ -118,13 +139,14 @@ class DueCard(QFrame):
             generate_and_record,
             on_result=self._on_invoice_ready,
             on_error=self._on_invoice_error,
-            on_finished=lambda: self.pdf_btn.setEnabled(True),
+            on_finished=lambda: self.pdf_btn.setEnabled(self.invoice_id is None),
         )
 
     def _on_invoice_ready(self, result):
         path, invoice_id = result
         self.last_invoice_path = path
-        self.last_invoice_id = invoice_id
+        self.invoice_id = invoice_id
+        self.data["invoice_id"] = invoice_id
 
         # Post-generation: offer to send over WhatsApp + open PDF
         dlg = InvoicePostIssueDialog(
@@ -140,16 +162,159 @@ class DueCard(QFrame):
         QMessageBox.critical(self, "خطأ في توليد الفاتورة", str(error))
 
     def _reset(self):
+        has_invoice = self.invoice_id is not None
+        if has_invoice:
+            message = (
+                "سيتم تسجيل الفاتورة كمدفوعة وتصفير عداد الطالب في عملية واحدة.\n\n"
+                "هل تم تحصيل المبلغ بالفعل؟"
+            )
+        else:
+            message = (
+                "لا توجد فاتورة غير مدفوعة مرتبطة بهذه الدورة. "
+                "المتابعة ستصفر العداد دون تسجيل تحصيل.\n\n"
+                "هل تريد المتابعة؟"
+            )
         if QMessageBox.question(
-            self, "تأكيد التصفير",
-            "سيتم تصفير عداد الطالب وأرشفة الحصص الحالية. "
-            "تأكد من تحصيل المبلغ أولاً.\n\nهل ترغب بالمتابعة؟"
+            self, "تأكيد التحصيل والتصفير", message
         ) != QMessageBox.Yes:
             return
-        reset_cycle(self.data["student"].id)
-        if self.last_invoice_id is not None:
-            from app.services.billing_service import mark_invoice_paid
-            mark_invoice_paid(self.last_invoice_id, True)
+        try:
+            if has_invoice:
+                collect_payment_and_reset(
+                    self.invoice_id, self.data["student"].id
+                )
+            else:
+                reset_cycle(self.data["student"].id)
+        except Exception as error:
+            QMessageBox.critical(self, "تعذر تسجيل التحصيل", str(error))
+            return
+        self.parent_page.data_changed.emit()
+
+    def _reconcile_legacy(self):
+        if not self.legacy_invoice_ids:
+            return
+        dialog = LegacyInvoiceReconciliationDialog(
+            self.legacy_invoice_ids[0], self.parent_page, self
+        )
+        dialog.exec()
+
+
+class LegacyInvoiceReconciliationDialog(QDialog):
+    def __init__(self, invoice_id: int, parent_page, parent=None):
+        super().__init__(parent)
+        self.invoice_id = invoice_id
+        self.parent_page = parent_page
+        self.data = legacy_invoice_reconciliation_data(invoice_id)
+        self.setLayoutDirection(Qt.RightToLeft)
+        self.setWindowTitle("تسوية فاتورة قديمة")
+        self.setMinimumWidth(620)
+        self._build()
+
+    def _build(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("تسوية فاتورة قديمة")
+        title.setObjectName("PageTitle")
+        layout.addWidget(title)
+
+        if self.data is None:
+            layout.addWidget(QLabel("لم يتم العثور على الفاتورة."))
+            close_btn = QPushButton("إغلاق")
+            close_btn.clicked.connect(self.reject)
+            layout.addWidget(close_btn)
+            return
+
+        invoice = self.data["invoice"]
+        self.invoice_amount = float(invoice.amount or 0)
+        self.invoice_student_id = invoice.student_id
+        explanation = QLabel(
+            "أُنشئت هذه الفاتورة قبل إضافة الربط الدقيق بين الفاتورة والدورة. "
+            "لن يغيّر التطبيق نشاط الطالب إلا إذا كانت الأعداد الحالية مطابقة تمامًا."
+        )
+        explanation.setWordWrap(True)
+        explanation.setObjectName("PageSubtitle")
+        layout.addWidget(explanation)
+
+        details = QLabel(
+            f"رقم الفاتورة: {invoice.id}\n"
+            f"تاريخ الفاتورة: {invoice.issued_at.strftime('%Y-%m-%d %H:%M')}\n"
+            f"المبلغ: {invoice.amount:.2f} {CURRENCY}\n"
+            f"أعداد الفاتورة القديمة: {invoice.sessions_count} حصة، "
+            f"{invoice.videos_count} فيديو\n"
+            f"الأعداد الحالية المحتسبة: {self.data['current_sessions']} حصة، "
+            f"{self.data['current_videos']} فيديو"
+        )
+        details.setWordWrap(True)
+        details.setObjectName("StudentMeta")
+        layout.addWidget(details)
+
+        if not self.data["counts_match"]:
+            warning = QLabel(
+                "الأعداد غير متطابقة؛ لا يمكن ربط الفاتورة أو تصفير الدورة. "
+                "يمكنك تسجيل الدفع فقط دون تغيير النشاط، أو مراجعة السجلات يدويًا."
+            )
+            warning.setWordWrap(True)
+            warning.setStyleSheet("color: #B45309; font-weight: 700;")
+            layout.addWidget(warning)
+
+        actions = QHBoxLayout()
+        paid_only = QPushButton("تسجيل الدفع فقط")
+        paid_only.clicked.connect(self._mark_paid_only)
+        actions.addWidget(paid_only)
+
+        link_reset = QPushButton("ربط بالدورة الحالية ثم التحصيل والتصفير")
+        link_reset.setObjectName("SuccessBtn")
+        link_reset.setEnabled(bool(self.data["counts_match"]))
+        link_reset.clicked.connect(self._link_collect_reset)
+        actions.addWidget(link_reset)
+
+        close_btn = QPushButton("إلغاء")
+        close_btn.clicked.connect(self.reject)
+        actions.addWidget(close_btn)
+        layout.addLayout(actions)
+
+    def _mark_paid_only(self):
+        if QMessageBox.question(
+            self,
+            "تأكيد تسجيل الدفع فقط",
+            f"سيتم تسجيل دفع الفاتورة رقم {self.invoice_id} بمبلغ "
+            f"{self.invoice_amount:.2f} {CURRENCY} دون تغيير أي حصة أو فيديو.\n\n"
+            "هل تريد المتابعة؟",
+        ) != QMessageBox.Yes:
+            return
+        try:
+            mark_legacy_invoice_paid_only(self.invoice_id)
+        except Exception as error:
+            QMessageBox.critical(self, "تعذر تسوية الفاتورة", str(error))
+            return
+        QMessageBox.information(self, "تم", "تم تسجيل الدفع دون تغيير النشاط.")
+        self.accept()
+        self.parent_page.data_changed.emit()
+
+    def _link_collect_reset(self):
+        sessions = self.data["current_sessions"]
+        videos = self.data["current_videos"]
+        if QMessageBox.question(
+            self,
+            "تأكيد الربط والتحصيل والتصفير",
+            f"سيتم ربط الفاتورة رقم {self.invoice_id} بالدورة الحالية "
+            f"({sessions} حصة، {videos} فيديو)، ثم تسجيل دفعها وتصفير الدورة "
+            "في عملية واحدة.\n\nهل تريد المتابعة؟",
+        ) != QMessageBox.Yes:
+            return
+        try:
+            reconcile_legacy_invoice_and_reset(
+                self.invoice_id, self.invoice_student_id
+            )
+        except Exception as error:
+            QMessageBox.critical(self, "تعذر تسوية الفاتورة", str(error))
+            return
+        QMessageBox.information(
+            self, "تم", "تم ربط الفاتورة وتسجيل الدفع وتصفير الدورة بنجاح."
+        )
+        self.accept()
         self.parent_page.data_changed.emit()
 
 

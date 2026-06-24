@@ -3,7 +3,7 @@ from typing import Any
 
 from sqlalchemy.exc import OperationalError
 
-from app.db.engine import get_session
+from app.db.engine import discard_session, get_session, session_scope
 from app.db.models import Setting
 
 
@@ -36,6 +36,7 @@ def get_setting(key: str, default: Any = None) -> Any:
         s = get_session()
         row = s.get(Setting, key)
     except OperationalError:
+        discard_session()
         return default
     if row is None:
         return default
@@ -46,17 +47,13 @@ def get_setting(key: str, default: Any = None) -> Any:
 
 
 def set_setting(key: str, value: Any) -> None:
-    try:
-        s = get_session()
+    with session_scope() as s:
         row = s.get(Setting, key)
         serialized = json.dumps(value, ensure_ascii=False)
         if row is None:
             s.add(Setting(key=key, value=serialized))
         else:
             row.value = serialized
-        s.commit()
-    except OperationalError:
-        pass
 
 
 def get_theme() -> str:

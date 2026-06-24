@@ -16,6 +16,11 @@ class ThemeManager(QObject):
 
     def __init__(self):
         super().__init__()
+        # Importing this module must never touch the database. Startup loads
+        # persisted settings only after database validation succeeds.
+        self._theme = "light"
+
+    def load_from_settings(self) -> None:
         self._theme = settings_service.get_theme()
 
     @property

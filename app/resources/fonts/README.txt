@@ -1,10 +1,10 @@
-ضع هنا ملف خط عربي بإحدى الأسماء التالية حتى يظهر النص العربي بشكل صحيح في الواجهة وفي ملفات PDF:
+خطوط Cairo التالية مرفقة مع Teacher Hub وتُضمَّن في حزمتَي PyInstaller:
 
-1. Cairo-Regular.ttf   (الأولى أولوية — يمكن تحميله من https://fonts.google.com/specimen/Cairo)
-2. Tajawal-Regular.ttf (بديل — https://fonts.google.com/specimen/Tajawal)
-3. Amiri-Regular.ttf   (بديل كلاسيكي — https://fonts.google.com/specimen/Amiri)
+- Cairo-Regular.ttf
+- Cairo-Medium.ttf
+- Cairo-SemiBold.ttf
+- Cairo-Bold.ttf
 
-ملاحظة مهمة:
-- إذا لم يوجد أي خط هنا، ستستخدم الواجهة خط النظام الافتراضي (Segoe UI على Windows) والذي يدعم العربية.
-- لكن فواتير PDF تحتاج خطاً عربياً TTF مسجّلاً صراحة — بدونه لن يظهر النص العربي في الفاتورة بشكل صحيح.
-- فقط نزّل الخط من Google Fonts وضع ملف .ttf داخل هذا المجلد.
+تستخدم الواجهة Cairo المرفق، مع بدائل نظام عند الحاجة. عند توليد PDF يفضّل التطبيق
+Tahoma أو Arial من Windows لتغطية عربية كاملة، ثم ينتقل إلى Cairo المرفق. لا يحتاج
+المستخدم إلى تنزيل خط يدوياً.

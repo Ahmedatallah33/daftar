@@ -1,7 +1,7 @@
 import re
 from typing import List, Optional, Tuple
 
-from app.db.engine import get_session
+from app.db.engine import get_session, session_scope
 from app.db.models import WhatsAppGroup
 
 
@@ -28,14 +28,14 @@ def get_group(group_id: int) -> Optional[WhatsAppGroup]:
 
 
 def create_group(name: str, invite_link: str, notes: str = "") -> WhatsAppGroup:
-    s = get_session()
     g = WhatsAppGroup(
         name=(name or "").strip(),
         invite_link=(invite_link or "").strip(),
         notes=(notes or "").strip(),
     )
-    s.add(g)
-    s.commit()
+    with session_scope() as s:
+        s.add(g)
+        s.flush()
     return g
 
 
@@ -46,25 +46,23 @@ def update_group(
     invite_link: Optional[str] = None,
     notes: Optional[str] = None,
 ) -> Optional[WhatsAppGroup]:
-    s = get_session()
-    g = s.get(WhatsAppGroup, group_id)
-    if not g:
-        return None
-    if name is not None:
-        g.name = name.strip()
-    if invite_link is not None:
-        g.invite_link = invite_link.strip()
-    if notes is not None:
-        g.notes = notes.strip()
-    s.commit()
+    with session_scope() as s:
+        g = s.get(WhatsAppGroup, group_id)
+        if not g:
+            return None
+        if name is not None:
+            g.name = name.strip()
+        if invite_link is not None:
+            g.invite_link = invite_link.strip()
+        if notes is not None:
+            g.notes = notes.strip()
     return g
 
 
 def delete_group(group_id: int) -> bool:
-    s = get_session()
-    g = s.get(WhatsAppGroup, group_id)
-    if not g:
-        return False
-    s.delete(g)
-    s.commit()
+    with session_scope() as s:
+        g = s.get(WhatsAppGroup, group_id)
+        if not g:
+            return False
+        s.delete(g)
     return True

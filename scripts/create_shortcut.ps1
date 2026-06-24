@@ -8,8 +8,8 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $SourceIcon  = Join-Path $ProjectRoot "app\resources\icons\app.ico"
 
-# ----- Deployment dir: ASCII-only path under user profile -----
-$DeployDir = "C:\Users\moaz-\TeacherHub"
+# ----- Per-user launcher directory; never hard-code a developer account. -----
+$DeployDir = Join-Path $env:LOCALAPPDATA "TeacherHub\launcher"
 New-Item -ItemType Directory -Force -Path $DeployDir | Out-Null
 
 # ----- Create a directory JUNCTION with an ASCII name that points into the
@@ -35,7 +35,7 @@ Copy-Item -LiteralPath $SourceIcon -Destination $IconPath -Force
 $PythonW = $null
 $PyLauncher = "$env:WINDIR\py.exe"
 if (Test-Path $PyLauncher) {
-    $pyExe = (& $PyLauncher -3.13 -c "import sys; print(sys.executable)").Trim()
+    $pyExe = (& $PyLauncher -3 -c "import sys; print(sys.executable)").Trim()
     if (-not $pyExe) {
         $pyExe = (& $PyLauncher -c "import sys; print(sys.executable)").Trim()
     }
@@ -45,9 +45,8 @@ if (Test-Path $PyLauncher) {
     }
 }
 if (-not $PythonW) {
-    foreach ($p in @("C:\Python313\pythonw.exe", "C:\Python314\pythonw.exe")) {
-        if (Test-Path $p) { $PythonW = $p; break }
-    }
+    $command = Get-Command pythonw.exe -ErrorAction SilentlyContinue
+    if ($command) { $PythonW = $command.Source }
 }
 if (-not $PythonW) { Write-Error "Could not locate pythonw.exe"; exit 1 }
 
