@@ -12,12 +12,18 @@ from PySide6.QtWidgets import (
 )
 
 from app.activation import ActivationCoordinator
-from app.config import ICONS_DIR
 from app.cloud.supabase_auth import SupabaseEmailOtpAuth
-from app.cloud.supabase_workspace_repository import SupabaseWorkspaceRepository, WorkspaceLookupError
+from app.cloud.supabase_workspace_repository import (
+    SupabaseWorkspaceRepository,
+    WorkspaceLookupError,
+    WorkspaceMembership,
+    WorkspaceSelectionError,
+)
+from app.config import ICONS_DIR
 from app.identity.models import AccountState
-from app.ui.pages.account_dialog import AccountDialog
 from app.ui.helpers.worker import run_in_background, set_background_operations_enabled
+from app.ui.pages.account_dialog import AccountDialog
+from app.ui.pages.workspace_picker_dialog import WorkspacePickerDialog
 
 
 class AccountShell(QMainWindow):
@@ -28,6 +34,9 @@ class AccountShell(QMainWindow):
         self.auth = auth or SupabaseEmailOtpAuth()
         set_background_operations_enabled(True)
         self._main_window = None
+        self._activation_in_progress = False
+        self._workspace_lookup_in_progress = False
+        self._workspace_picker_open = False
         self._activation_coordinator = ActivationCoordinator(
             SupabaseWorkspaceRepository(lambda: self.auth.authenticated_client)
         )
@@ -84,35 +93,133 @@ class AccountShell(QMainWindow):
         self._refresh_status()
 
     def open_account_dialog(self) -> None:
+        if self._flow_busy():
+            return
+        identity = getattr(self.auth, "authenticated_identity", None)
+        if identity is not None:
+            self._start_workspace_lookup(identity)
+            return
         dialog = AccountDialog(self.auth, self)
         if dialog.exec() == QDialog.Accepted:
             result = dialog.verification_result
             identity = result.identity if result is not None else self.auth.authenticated_identity
             if identity is not None:
-                self._start_activation(identity)
+                self._start_workspace_lookup(identity)
                 return
         self._refresh_status()
 
-    def _start_activation(self, identity) -> None:
-        self._set_activation_busy(True, "جاري فتح مساحة العمل بأمان...")
+    def _start_workspace_lookup(self, identity) -> None:
+        if self._flow_busy():
+            return
+        self._workspace_lookup_in_progress = True
+        self._set_entry_busy(True, "جاري التحقق من مساحات العمل المصرح بها...")
         run_in_background(
             self,
-            lambda: self._activation_coordinator.activate(identity),
+            lambda: self._activation_coordinator.list_authorized_workspaces(identity),
+            on_result=lambda memberships: self._on_workspaces_loaded(identity, memberships),
+            on_error=self._on_workspace_lookup_error,
+        )
+
+    def _on_workspaces_loaded(
+        self,
+        identity,
+        memberships: tuple[WorkspaceMembership, ...],
+    ) -> None:
+        self._workspace_lookup_in_progress = False
+        if len(memberships) == 1:
+            self._start_activation(identity, memberships[0])
+            return
+        if len(memberships) > 1:
+            self._show_workspace_picker(identity, memberships)
+            return
+        self._on_workspace_lookup_error(
+            WorkspaceSelectionError(
+                "لا توجد مساحة عمل مفعلة لهذا الحساب. لم يتم فتح أي بيانات محلية."
+            )
+        )
+
+    def _show_workspace_picker(
+        self,
+        identity,
+        memberships: tuple[WorkspaceMembership, ...],
+    ) -> None:
+        if self._activation_in_progress or self._workspace_picker_open:
+            return
+        self._workspace_picker_open = True
+        self._set_entry_busy(True, "اختر مساحة العمل للمتابعة.")
+        dialog = WorkspacePickerDialog(memberships, self)
+        result = dialog.exec()
+        self._workspace_picker_open = False
+        selected = dialog.selected_membership
+        if result == QDialog.Accepted and selected is not None:
+            self._start_activation(identity, selected)
+            return
+        self._set_entry_busy(False)
+        self.sign_in_btn.setText("اختيار مساحة العمل")
+        self.status_label.setText(
+            "تم إلغاء اختيار مساحة العمل. لم يتم فتح أي بيانات تشغيلية."
+        )
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _on_workspace_lookup_error(self, error: Exception) -> None:
+        self._workspace_lookup_in_progress = False
+        self._activation_coordinator.rollback_partial_activation()
+        self.auth.sign_out()
+        self._set_entry_busy(False)
+        if isinstance(error, WorkspaceLookupError):
+            self.status_label.setText(str(error))
+        else:
+            self.status_label.setText(
+                "تعذر التحقق من مساحات العمل الآن. لم يتم فتح أي بيانات تشغيلية."
+            )
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _start_activation(
+        self,
+        identity,
+        selected_membership: WorkspaceMembership,
+    ) -> None:
+        if self._activation_in_progress:
+            return
+        self._activation_in_progress = True
+        self._set_entry_busy(True, "جاري فتح مساحة العمل بأمان...")
+        run_in_background(
+            self,
+            lambda: self._activation_coordinator.activate_workspace(
+                identity,
+                selected_membership,
+            ),
             on_result=self._on_activation_success,
             on_error=self._on_activation_error,
-            on_finished=lambda: self._set_activation_busy(False),
+            on_finished=self._on_activation_finished,
         )
 
     def _on_activation_success(self, activation_result) -> None:
-        from app.ui.main_window import MainWindow
+        try:
+            from app.ui.main_window import MainWindow
 
-        self._main_window = MainWindow(
-            auth=self.auth,
-            activation_result=activation_result,
-        )
-        self._main_window.showNormal()
-        self._main_window.raise_()
-        self._main_window.activateWindow()
+            main_window = MainWindow(
+                auth=self.auth,
+                activation_result=activation_result,
+            )
+            main_window.showNormal()
+            main_window.raise_()
+            main_window.activateWindow()
+        except Exception:
+            self._activation_coordinator.rollback_partial_activation()
+            self.status_label.setText(
+                "تعذر فتح الواجهة التشغيلية بأمان. لم يتم إبقاء أي قاعدة بيانات مفتوحة."
+            )
+            self.showNormal()
+            self.raise_()
+            self.activateWindow()
+            return
+
+        self._main_window = main_window
         self.hide()
 
     def _on_activation_error(self, error: Exception) -> None:
@@ -128,7 +235,19 @@ class AccountShell(QMainWindow):
         self.raise_()
         self.activateWindow()
 
-    def _set_activation_busy(self, busy: bool, message: str = "") -> None:
+    def _on_activation_finished(self) -> None:
+        self._activation_in_progress = False
+        if self._main_window is None:
+            self._set_entry_busy(False)
+
+    def _flow_busy(self) -> bool:
+        return (
+            self._workspace_lookup_in_progress
+            or self._workspace_picker_open
+            or self._activation_in_progress
+        )
+
+    def _set_entry_busy(self, busy: bool, message: str = "") -> None:
         self.sign_in_btn.setEnabled(not busy)
         if message:
             self.status_label.setText(message)
@@ -137,8 +256,7 @@ class AccountShell(QMainWindow):
         state = self.auth.current_state
         if state == AccountState.SIGNED_IN_ONLINE:
             self.status_label.setText(
-                "تم إثبات الحساب مبدئياً. فتح البيانات المحلية ينتظر اختيار "
-                "مساحة عمل وتفعيل سياق حساب آمن في مرحلة لاحقة."
+                "تم إثبات الحساب مبدئياً. فتح البيانات المحلية ينتظر اختيار مساحة عمل آمنة."
             )
             self.sign_in_btn.setText("الحساب")
         elif state == AccountState.SIGN_IN_PENDING:

@@ -53,6 +53,7 @@ def test_activation_modules_import_for_packaging_probe():
                 "import app.cloud.auth_identity; "
                 "import app.cloud.supabase_workspace_repository; "
                 "import app.restart; "
+                "import app.ui.pages.workspace_picker_dialog; "
                 "print('ACTIVATION_IMPORT_OK')"
             ),
         ],

@@ -15,6 +15,7 @@ from app.cloud.auth_identity import AuthenticatedIdentity
 from app.cloud.supabase_auth import SupabaseAuthInvalidOtpError
 from app.cloud.supabase_workspace_repository import (
     SupabaseWorkspaceRepository,
+    WorkspaceLookupError,
     WorkspaceSelectionError,
     WorkspaceUnavailableError,
     select_single_workspace,
@@ -180,6 +181,138 @@ def test_workspace_repository_auto_selects_exactly_one_authorized_workspace():
         ("select", "workspace_id,role,workspaces(id,name)"),
         ("eq", "user_id", USER_A),
     ]
+
+
+def test_activation_coordinator_orders_authorized_workspaces_deterministically():
+    workspace_c = str(uuid.UUID(int=3))
+    workspace_d = str(uuid.UUID(int=4))
+    rows = [
+        _row(WORKSPACE_B, role="member", name="Beta"),
+        _row(WORKSPACE_A, role="admin", name="alpha"),
+        _row(workspace_c, role="owner", name="Alpha"),
+        _row(workspace_d, role="member", name="Alpha"),
+    ]
+    coordinator = ActivationCoordinator(
+        SupabaseWorkspaceRepository(lambda: FakeClient(rows))
+    )
+
+    ordered = coordinator.list_authorized_workspaces(AuthenticatedIdentity(USER_A))
+
+    assert [membership.workspace_id for membership in ordered] == [
+        workspace_c,
+        WORKSPACE_A,
+        workspace_d,
+        WORKSPACE_B,
+    ]
+
+
+def test_activate_workspace_rejects_membership_not_returned_by_authorized_lookup(tmp_path):
+    clean_root = tmp_path / "ActivationRoot"
+    engine_mod.unbind_engine()
+    config.apply_user_root(clean_root)
+    coordinator = ActivationCoordinator(
+        SupabaseWorkspaceRepository(lambda: FakeClient([_row(WORKSPACE_A)]))
+    )
+    identity = AuthenticatedIdentity(USER_A)
+    coordinator.list_authorized_workspaces(identity)
+    unauthorized = next(
+        iter(SupabaseWorkspaceRepository(lambda: FakeClient([_row(WORKSPACE_B)])).list_memberships(identity))
+    )
+
+    with pytest.raises(WorkspaceLookupError):
+        coordinator.activate_workspace(identity, unauthorized)
+
+    assert active_account_context() is None
+    assert not (
+        clean_root / "accounts" / USER_A / "workspaces" / WORKSPACE_B / "data" / "teacher.db"
+    ).exists()
+
+
+def test_activate_workspace_rejects_structurally_equal_replacement_membership(tmp_path):
+    clean_root = tmp_path / "ActivationRoot"
+    engine_mod.unbind_engine()
+    config.apply_user_root(clean_root)
+    coordinator = ActivationCoordinator(
+        SupabaseWorkspaceRepository(lambda: FakeClient([_row(WORKSPACE_A)]))
+    )
+    identity = AuthenticatedIdentity(USER_A)
+    authorized = coordinator.list_authorized_workspaces(identity)
+    replacement = type(authorized[0])(
+        workspace_id=authorized[0].workspace_id,
+        role=authorized[0].role,
+        display_name=authorized[0].display_name,
+    )
+
+    assert replacement == authorized[0]
+    assert replacement is not authorized[0]
+    with pytest.raises(WorkspaceLookupError):
+        coordinator.activate_workspace(identity, replacement)
+
+    assert active_account_context() is None
+    assert not (
+        clean_root / "accounts" / USER_A / "workspaces" / WORKSPACE_A / "data" / "teacher.db"
+    ).exists()
+
+
+def test_activate_workspace_rejects_membership_from_another_identity(tmp_path):
+    clean_root = tmp_path / "ActivationRoot"
+    engine_mod.unbind_engine()
+    config.apply_user_root(clean_root)
+    coordinator = ActivationCoordinator(
+        SupabaseWorkspaceRepository(lambda: FakeClient([_row(WORKSPACE_A)]))
+    )
+    user_a = AuthenticatedIdentity(USER_A)
+    user_b = AuthenticatedIdentity(USER_B)
+    user_a_memberships = coordinator.list_authorized_workspaces(user_a)
+
+    with pytest.raises(WorkspaceLookupError):
+        coordinator.activate_workspace(user_b, user_a_memberships[0])
+
+    assert active_account_context() is None
+    assert not (
+        clean_root / "accounts" / USER_B / "workspaces" / WORKSPACE_A / "data" / "teacher.db"
+    ).exists()
+
+
+def test_activate_workspace_rejects_stale_selection_after_new_lookup(tmp_path):
+    clean_root = tmp_path / "ActivationRoot"
+    engine_mod.unbind_engine()
+    config.apply_user_root(clean_root)
+    coordinator = ActivationCoordinator(
+        SupabaseWorkspaceRepository(lambda: FakeClient([_row(WORKSPACE_A)]))
+    )
+    identity = AuthenticatedIdentity(USER_A)
+    stale = coordinator.list_authorized_workspaces(identity)[0]
+    fresh = coordinator.list_authorized_workspaces(identity)[0]
+
+    assert stale == fresh
+    assert stale is not fresh
+    with pytest.raises(WorkspaceLookupError):
+        coordinator.activate_workspace(identity, stale)
+
+    assert active_account_context() is None
+    assert not (
+        clean_root / "accounts" / USER_A / "workspaces" / WORKSPACE_A / "data" / "teacher.db"
+    ).exists()
+
+
+def test_activate_workspace_accepts_exact_current_authorized_selection(tmp_path):
+    clean_root = tmp_path / "ActivationRoot"
+    engine_mod.unbind_engine()
+    config.apply_user_root(clean_root)
+    coordinator = ActivationCoordinator(
+        SupabaseWorkspaceRepository(lambda: FakeClient([_row(WORKSPACE_A)]))
+    )
+    identity = AuthenticatedIdentity(USER_A)
+    selected = coordinator.list_authorized_workspaces(identity)[0]
+
+    result = coordinator.activate_workspace(identity, selected)
+
+    assert result.workspace is selected
+    assert result.context.database_path.exists()
+    assert result.context.database_path == (
+        clean_root / "accounts" / USER_A / "workspaces" / WORKSPACE_A / "data" / "teacher.db"
+    )
 
 
 def test_workspace_repository_fails_closed_for_zero_multiple_malformed_and_provider_failure():
