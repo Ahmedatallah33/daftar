@@ -31,14 +31,9 @@ _install_crash_logger()
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
 
 from app.config import FONTS_DIR, ICONS_DIR
-from app.startup import (
-    initialize_application_data,
-    log_startup_failure,
-    startup_error_message,
-)
 
 
 CAIRO_WEIGHTS = (
@@ -142,28 +137,13 @@ def main():
 
     load_fonts(app)
 
-    try:
-        initialize_application_data()
-    except Exception as error:
-        try:
-            log_startup_failure(error)
-        except Exception:
-            pass
-        QMessageBox.critical(
-            None, "تعذر تشغيل Teacher Hub", startup_error_message(error)
-        )
-        return 1
-
-    # Import and initialize database-dependent UI state only after the guarded
-    # startup validation above has succeeded.
     from app.ui.helpers.theme import theme_manager
 
-    theme_manager.load_from_settings()
     theme_manager.apply(app)
 
-    from app.ui.main_window import MainWindow
+    from app.ui.account_shell import AccountShell
 
-    window = MainWindow()
+    window = AccountShell()
     window.showNormal()
     window.raise_()
     window.activateWindow()

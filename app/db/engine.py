@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import scoped_session, sessionmaker
 
-from app.config import BACKUPS_DIR, DB_PATH, DB_URL, ensure_dirs
+from app import config
 from app.db.models import Base
 from app.db.safety import integrity_check, online_backup
 
@@ -67,7 +67,7 @@ def _create_engine(db_url: str):
     return created
 
 
-_ACTIVE_DB_URL = os.environ.get("TEACHER_DB_URL", DB_URL)
+_ACTIVE_DB_URL = os.environ.get("TEACHER_DB_URL", config.DB_URL)
 engine = _create_engine(_ACTIVE_DB_URL)
 SessionLocal = scoped_session(
     sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -216,7 +216,7 @@ def _validate_current_schema(connection, require_version: bool = True) -> None:
 
 def init_db() -> Path | None:
     """Initialize and validate the database, returning a pre-migration backup if made."""
-    ensure_dirs()
+    config.ensure_dirs()
     database_path = current_database_path()
     database_path.parent.mkdir(parents=True, exist_ok=True)
     pre_migration_backup = None
@@ -239,8 +239,8 @@ def init_db() -> Path | None:
         and database_path.stat().st_size > 0
     ):
         backup_dir = (
-            BACKUPS_DIR
-            if database_path == DB_PATH.resolve()
+            config.BACKUPS_DIR
+            if database_path == config.DB_PATH.resolve()
             else database_path.parent / "backups"
         )
         pre_migration_backup = online_backup(

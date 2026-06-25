@@ -5,12 +5,15 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton,
     QLabel, QStackedWidget, QButtonGroup, QFrame, QSystemTrayIcon,
-    QApplication
+    QApplication, QDialog
 )
 
 from app.config import ICONS_DIR
+from app.cloud.supabase_auth import SupabaseEmailOtpAuth
+from app.identity.models import AccountState
 from app.ui.helpers.icons import icon, ICONS
 from app.ui.helpers.theme import theme_manager
+from app.ui.pages.account_dialog import AccountDialog
 from app.ui.pages.schedule_page import SchedulePage
 from app.ui.pages.students_page import StudentsPage
 from app.ui.pages.billing_page import BillingPage
@@ -28,6 +31,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Teacher Hub — إدارة الحصص")
         self.resize(1360, 860)
         self.setLayoutDirection(Qt.RightToLeft)
+        self.account_auth = SupabaseEmailOtpAuth()
 
         app_icon_path = ICONS_DIR / "app.ico"
         if app_icon_path.exists():
@@ -96,6 +100,7 @@ class MainWindow(QMainWindow):
         theme_manager.theme_changed.connect(self._refresh_icons)
 
         self._switch_page(0)
+        self._update_account_status()
         self._update_clock()
 
     def _build_sidebar(self) -> QWidget:
@@ -217,6 +222,15 @@ class MainWindow(QMainWindow):
         self.topbar_date.setObjectName("TopBarDate")
         layout.addWidget(self.topbar_date)
 
+        self.account_status = QLabel()
+        self.account_status.setObjectName("TopBarDate")
+        layout.addWidget(self.account_status)
+
+        self.account_btn = QPushButton("تسجيل الدخول")
+        self.account_btn.setObjectName("GhostBtn")
+        self.account_btn.clicked.connect(self._open_account_dialog)
+        layout.addWidget(self.account_btn)
+
         return bar
 
     def _build_tray(self):
@@ -268,9 +282,26 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self)
         dialog.exec()
 
+    def _open_account_dialog(self) -> None:
+        dialog = AccountDialog(self.account_auth, self)
+        if dialog.exec() == QDialog.Accepted:
+            self._update_account_status()
+
     def _toggle_theme(self) -> None:
         app = QApplication.instance()
         theme_manager.toggle(app)
+
+    def _update_account_status(self) -> None:
+        state = self.account_auth.current_state
+        if state == AccountState.SIGNED_IN_ONLINE:
+            self.account_status.setText("الحساب: متصل")
+            self.account_btn.setText("الحساب")
+        elif state == AccountState.SIGN_IN_PENDING:
+            self.account_status.setText("الحساب: بانتظار الرمز")
+            self.account_btn.setText("إكمال الدخول")
+        else:
+            self.account_status.setText("الحساب: غير مسجل")
+            self.account_btn.setText("تسجيل الدخول")
 
     def _refresh_icons(self, *args) -> None:
         nav_color = theme_manager.nav_icon_color()

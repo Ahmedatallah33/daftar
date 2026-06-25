@@ -25,6 +25,19 @@ def initialize_application_data() -> Path | None:
     return init_db()
 
 
+def initialize_account_context_data() -> Path | None:
+    """Prepare an already selected account/workspace storage root.
+
+    This intentionally does not run legacy shared-database migration. Existing
+    Teacher Hub data remains preserved and inaccessible until a future explicit
+    owner-claim/import flow.
+    """
+
+    ensure_dirs()
+    apply_pending_restore()
+    return init_db()
+
+
 def startup_error_message(error: BaseException) -> str:
     return (
         "تعذر فتح قاعدة بيانات Teacher Hub بأمان.\n\n"

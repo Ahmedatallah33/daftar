@@ -80,6 +80,25 @@ def ensure_dirs() -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
+def apply_user_root(user_root: Path) -> None:
+    """Repoint writable runtime paths to an already selected user/account root."""
+
+    global USER_ROOT, DATA_DIR, BACKUPS_DIR, EXPORTS_DIR, INVOICES_DIR
+    global LOGS_DIR, RESTORE_DIR, IDENTITY_DIR, IDENTITY_METADATA_PATH, DB_PATH, DB_URL
+
+    USER_ROOT = Path(user_root).expanduser().resolve()
+    DATA_DIR = USER_ROOT / "data"
+    BACKUPS_DIR = USER_ROOT / "backups"
+    EXPORTS_DIR = USER_ROOT / "exports"
+    INVOICES_DIR = EXPORTS_DIR / "invoices"
+    LOGS_DIR = USER_ROOT / "logs"
+    RESTORE_DIR = USER_ROOT / "restore"
+    IDENTITY_DIR = USER_ROOT / "identity"
+    IDENTITY_METADATA_PATH = IDENTITY_DIR / "metadata.json"
+    DB_PATH = DATA_DIR / "teacher.db"
+    DB_URL = f"sqlite:///{DB_PATH.as_posix()}"
+
+
 def legacy_roots() -> list[Path]:
     override = os.environ.get("TEACHER_HUB_LEGACY_ROOT")
     candidates = (
