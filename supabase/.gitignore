@@ -1,0 +1,5 @@
+# Supabase CLI local state — never commit linked project refs, secrets, or
+# the local shadow database. Only config.toml and migrations/ are tracked.
+.branches/
+.temp/
+.env

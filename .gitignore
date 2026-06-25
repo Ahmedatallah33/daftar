@@ -81,6 +81,9 @@ pip-wheel-metadata/
 .codex/
 *.code-workspace
 
+# Local MCP server configuration (kept local, never committed)
+.mcp.json
+
 # Operating-system metadata
 .DS_Store
 .AppleDouble

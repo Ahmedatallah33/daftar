@@ -1,0 +1,25 @@
+# Supabase CLI configuration for the Daftar DEVELOPMENT project only.
+# This file is version-controlled. It must never reference the production
+# project. Secrets (PAT, service_role, db password) are never stored here.
+project_id = "daftar-development"
+
+[db]
+# Local shadow database port used by `supabase db diff` / `db reset`.
+# The linked remote project ref (thzwrbicieyilufasfoo) is stored by the CLI
+# outside the repository and is intentionally not committed here.
+major_version = 17
+
+[db.migrations]
+schema_paths = []
+
+[auth]
+# Development authentication: Email OTP is the prepared sign-in method.
+# Google OAuth is intentionally NOT configured in this sprint.
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+# Email OTP (one-time password) sign-in for development accounts.
+enable_confirmations = false
+otp_length = 6
+otp_expiry = 3600
