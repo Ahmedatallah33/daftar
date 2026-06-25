@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QCheckBox, QDialog, QLineEdit
 )
 
+from app import config
 from app.config import CURRENCY
 from app.services.billing_service import monthly_stats, reset_all_activity
 from app.ui.helpers.icons import icon, ICONS
@@ -166,8 +167,7 @@ class ReportsPage(QWidget):
             "تصفير شامل لبدء فترة تعليمية جديدة من الصفر. "
             "يتم إنشاء <b>نسخة محلية متحقّق منها لقاعدة SQLite</b> قبل أي حذف. "
             "يجب حماية النسخة نفسها؛ فهي محلية ولا تشمل ملفات PDF أو XLSX المُصدَّرة. "
-            "يمكنك استعادة بيانات القاعدة من مجلد "
-            "<code>%LOCALAPPDATA%\\TeacherHub\\backups</code>."
+            f"يمكنك استعادة بيانات القاعدة من مجلد <code>{config.BACKUPS_DIR}</code>."
         )
         desc.setWordWrap(True)
         desc.setStyleSheet(

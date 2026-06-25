@@ -27,6 +27,7 @@ from types import MappingProxyType
 
 from app.identity.credential_store import CredentialStore, WindowsCredentialManagerStore
 from app.identity.models import AccountState
+from app.cloud.auth_identity import canonical_user_uuid
 
 
 # The project ref is non-secret — it appears in the public project URL. Pinning
@@ -38,7 +39,8 @@ DEVELOPMENT_PROJECT_REF = "thzwrbicieyilufasfoo"
 # ever written here; this only fixes WHERE such a secret may live — inside the
 # secure OS credential store, under the existing identity namespace
 # (resolves to "Daftar/Identity/Provider/Supabase/refresh").
-SUPABASE_REFRESH_CREDENTIAL_NAME = "Provider/Supabase/refresh"
+SUPABASE_REFRESH_CREDENTIAL_PREFIX = "Provider/Supabase"
+SUPABASE_REFRESH_CREDENTIAL_NAME = f"{SUPABASE_REFRESH_CREDENTIAL_PREFIX}/refresh"
 
 
 class ProviderConfigError(RuntimeError):
@@ -103,14 +105,17 @@ class SupabaseCredentialBridge:
     def __init__(self, credential_store: CredentialStore | None = None):
         self._store = credential_store or WindowsCredentialManagerStore()
 
-    def store_refresh_secret(self, secret: str) -> None:
-        self._store.write_credential(SUPABASE_REFRESH_CREDENTIAL_NAME, secret)
+    def _refresh_name(self, user_id: str) -> str:
+        return f"{SUPABASE_REFRESH_CREDENTIAL_PREFIX}/{canonical_user_uuid(user_id)}/refresh"
 
-    def load_refresh_secret(self) -> str:
-        return self._store.read_credential(SUPABASE_REFRESH_CREDENTIAL_NAME)
+    def store_refresh_secret_for_user(self, user_id: str, secret: str) -> None:
+        self._store.write_credential(self._refresh_name(user_id), secret)
 
-    def clear_refresh_secret(self) -> None:
-        self._store.delete_credential(SUPABASE_REFRESH_CREDENTIAL_NAME)
+    def load_refresh_secret_for_user(self, user_id: str) -> str:
+        return self._store.read_credential(self._refresh_name(user_id))
+
+    def clear_refresh_secret_for_user(self, user_id: str) -> None:
+        self._store.delete_credential(self._refresh_name(user_id))
 
 
 # Data-only mapping of Supabase auth outcomes to provider-neutral account

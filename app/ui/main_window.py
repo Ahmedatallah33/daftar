@@ -5,15 +5,15 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QPushButton,
     QLabel, QStackedWidget, QButtonGroup, QFrame, QSystemTrayIcon,
-    QApplication, QDialog
+    QApplication
 )
 
+from app.activation import ActivationCoordinator
 from app.config import ICONS_DIR
-from app.cloud.supabase_auth import SupabaseEmailOtpAuth
 from app.identity.models import AccountState
+from app.restart import request_restart_after_exit
 from app.ui.helpers.icons import icon, ICONS
 from app.ui.helpers.theme import theme_manager
-from app.ui.pages.account_dialog import AccountDialog
 from app.ui.pages.schedule_page import SchedulePage
 from app.ui.pages.students_page import StudentsPage
 from app.ui.pages.billing_page import BillingPage
@@ -26,12 +26,14 @@ from app.services.notification_service import NotificationService
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, *, auth, activation_result, restart_callback=None):
         super().__init__()
         self.setWindowTitle("Teacher Hub — إدارة الحصص")
         self.resize(1360, 860)
         self.setLayoutDirection(Qt.RightToLeft)
-        self.account_auth = SupabaseEmailOtpAuth()
+        self.account_auth = auth
+        self.activation_result = activation_result
+        self._restart_callback = restart_callback
 
         app_icon_path = ICONS_DIR / "app.ico"
         if app_icon_path.exists():
@@ -228,7 +230,7 @@ class MainWindow(QMainWindow):
 
         self.account_btn = QPushButton("تسجيل الدخول")
         self.account_btn.setObjectName("GhostBtn")
-        self.account_btn.clicked.connect(self._open_account_dialog)
+        self.account_btn.clicked.connect(self._sign_out)
         layout.addWidget(self.account_btn)
 
         return bar
@@ -282,16 +284,28 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self)
         dialog.exec()
 
-    def _open_account_dialog(self) -> None:
-        dialog = AccountDialog(self.account_auth, self)
-        if dialog.exec() == QDialog.Accepted:
-            self._update_account_status()
+    def _sign_out(self) -> None:
+        self.account_btn.setEnabled(False)
+        if self.notifier:
+            self.notifier.stop()
+        self.clock_timer.stop()
+        ActivationCoordinator.controlled_sign_out(self.account_auth)
+        request_restart_after_exit(self._restart_callback)
+        self.close()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
     def _toggle_theme(self) -> None:
         app = QApplication.instance()
         theme_manager.toggle(app)
 
     def _update_account_status(self) -> None:
+        self.account_status.setText(
+            f"مساحة العمل: {self.activation_result.workspace.display_name}"
+        )
+        self.account_btn.setText("تسجيل الخروج")
+        return
         state = self.account_auth.current_state
         if state == AccountState.SIGNED_IN_ONLINE:
             self.account_status.setText("الحساب: متصل")

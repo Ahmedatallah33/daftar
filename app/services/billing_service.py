@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy import func, or_
 
-from app.config import BACKUPS_DIR, DB_PATH
+from app import config
 from app.db.engine import get_session, session_scope
 from app.db.models import Invoice, Session as SessionModel, Student, Video
 from app.db.safety import online_backup
@@ -332,7 +332,7 @@ def reconcile_legacy_invoice_and_reset(
 
 def backup_database() -> Path:
     """Create and validate a complete, DB-only online SQLite backup."""
-    return online_backup(DB_PATH, BACKUPS_DIR)
+    return online_backup(config.DB_PATH, config.BACKUPS_DIR)
 
 
 def reset_all_activity(keep_students: bool = True) -> Tuple[Path, Dict[str, int]]:

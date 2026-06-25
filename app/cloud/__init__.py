@@ -8,6 +8,7 @@ touches no business data.
 from app.cloud.supabase_provider import (
     DEVELOPMENT_PROJECT_REF,
     SUPABASE_REFRESH_CREDENTIAL_NAME,
+    SUPABASE_REFRESH_CREDENTIAL_PREFIX,
     ProviderConfigError,
     SupabaseAuthMethod,
     SupabaseCredentialBridge,
@@ -15,6 +16,7 @@ from app.cloud.supabase_provider import (
     account_state_for_event,
     load_development_config,
 )
+from app.cloud.auth_identity import AuthenticatedIdentity, AuthenticatedIdentityError
 from app.cloud.supabase_auth import (
     OtpRequestResult,
     OtpVerifyResult,
@@ -27,12 +29,23 @@ from app.cloud.supabase_auth import (
     normalize_email,
     normalize_otp,
 )
+from app.cloud.supabase_workspace_repository import (
+    SupabaseWorkspaceRepository,
+    WorkspaceLookupError,
+    WorkspaceMembership,
+    WorkspaceSelectionError,
+    WorkspaceUnavailableError,
+    select_single_workspace,
+)
 
 __all__ = [
     "DEVELOPMENT_PROJECT_REF",
+    "AuthenticatedIdentity",
+    "AuthenticatedIdentityError",
     "OtpRequestResult",
     "OtpVerifyResult",
     "SUPABASE_REFRESH_CREDENTIAL_NAME",
+    "SUPABASE_REFRESH_CREDENTIAL_PREFIX",
     "ProviderConfigError",
     "SupabaseAuthMethod",
     "SupabaseAuthFlowError",
@@ -43,8 +56,14 @@ __all__ = [
     "SupabaseCredentialBridge",
     "SupabaseEmailOtpAuth",
     "SupabaseProjectConfig",
+    "SupabaseWorkspaceRepository",
+    "WorkspaceLookupError",
+    "WorkspaceMembership",
+    "WorkspaceSelectionError",
+    "WorkspaceUnavailableError",
     "account_state_for_event",
     "load_development_config",
     "normalize_email",
     "normalize_otp",
+    "select_single_workspace",
 ]

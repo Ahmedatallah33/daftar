@@ -4,6 +4,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -30,6 +31,7 @@ from app.ui.pages.account_dialog import AccountDialog
 
 ACCESS_CREDENTIAL = "memory-access-credential"
 REFRESH_CREDENTIAL = "secure-refresh-credential"
+USER_ID = str(uuid.uuid4())
 
 
 class FakeAuthApi:
@@ -39,6 +41,7 @@ class FakeAuthApi:
         self.fail_request: Exception | None = None
         self.fail_verify: Exception | None = None
         self.response = SimpleNamespace(
+            user=SimpleNamespace(id=USER_ID),
             session=SimpleNamespace(
                 access_token=ACCESS_CREDENTIAL,
                 refresh_token=REFRESH_CREDENTIAL,
@@ -66,15 +69,19 @@ class FakeClient:
 class RecordingBridge:
     def __init__(self):
         self.refresh_values = []
+        self.cleared_users = []
 
-    def store_refresh_secret(self, value: str) -> None:
-        self.refresh_values.append(value)
+    def store_refresh_secret_for_user(self, user_id: str, value: str) -> None:
+        self.refresh_values.append((user_id, value))
 
-    def load_refresh_secret(self) -> str:
-        return self.refresh_values[-1]
+    def load_refresh_secret_for_user(self, user_id: str) -> str:
+        for stored_user_id, value in reversed(self.refresh_values):
+            if stored_user_id == user_id:
+                return value
+        raise KeyError(user_id)
 
-    def clear_refresh_secret(self) -> None:
-        self.refresh_values.clear()
+    def clear_refresh_secret_for_user(self, user_id: str) -> None:
+        self.cleared_users.append(user_id)
 
 
 def _config_loader(env=None):
@@ -177,8 +184,10 @@ def test_verify_code_success_stores_only_refresh_bridge_and_keeps_access_memory_
     result = auth.verify_code("teacher@example.com", "123456")
 
     assert result.account_state is AccountState.SIGNED_IN_ONLINE
+    assert result.identity.user_id == USER_ID
+    assert repr(result.identity) == "AuthenticatedIdentity(user_id=<redacted>)"
     assert auth.access_token_in_memory == ACCESS_CREDENTIAL
-    assert bridge.refresh_values == [REFRESH_CREDENTIAL]
+    assert bridge.refresh_values == [(USER_ID, REFRESH_CREDENTIAL)]
     assert client.auth.verify_requests == [
         {"email": "teacher@example.com", "token": "123456", "type": "email"}
     ]

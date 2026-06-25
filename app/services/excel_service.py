@@ -6,11 +6,13 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-from app.config import EXPORTS_DIR, WEEKDAY_AR
+from app import config
 from app.services.student_service import (
     list_students, get_day_schedules, get_custom_fields,
     counted_sessions_map, counted_videos_map,
 )
+
+WEEKDAY_AR = config.WEEKDAY_AR
 
 
 _HEADERS = [
@@ -56,7 +58,7 @@ def export_students_xlsx(out_path: Path | None = None) -> Path:
     """Export all students (active + inactive) to a single xlsx with all fields."""
     if out_path is None:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_path = EXPORTS_DIR / f"students_{ts}.xlsx"
+        out_path = config.EXPORTS_DIR / f"students_{ts}.xlsx"
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -124,3 +126,11 @@ def export_students_xlsx(out_path: Path | None = None) -> Path:
 
     wb.save(str(out_path))
     return out_path
+
+
+def __getattr__(name: str):
+    if name == "EXPORTS_DIR":
+        return config.EXPORTS_DIR
+    if name == "WEEKDAY_AR":
+        return config.WEEKDAY_AR
+    raise AttributeError(name)

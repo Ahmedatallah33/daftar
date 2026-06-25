@@ -22,6 +22,7 @@ class AccountDialog(QDialog):
         super().__init__(parent)
         self.auth = auth
         self._email_for_otp = ""
+        self.verification_result = None
         self.setLayoutDirection(Qt.RightToLeft)
         self.setWindowTitle("حساب Daftar")
         self.resize(460, 280)
@@ -130,7 +131,8 @@ class AccountDialog(QDialog):
         self.otp_edit.setFocus()
         self.status_label.setText("")
 
-    def _on_code_verified(self, _result) -> None:
+    def _on_code_verified(self, result) -> None:
+        self.verification_result = result
         self.status_label.setText(
             "تم تسجيل الدخول بنجاح. فتح البيانات المحلية ينتظر اختيار مساحة عمل آمنة."
         )

@@ -4,16 +4,20 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QLabel,
+    QDialog,
     QMainWindow,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from app.activation import ActivationCoordinator
 from app.config import ICONS_DIR
 from app.cloud.supabase_auth import SupabaseEmailOtpAuth
+from app.cloud.supabase_workspace_repository import SupabaseWorkspaceRepository, WorkspaceLookupError
 from app.identity.models import AccountState
 from app.ui.pages.account_dialog import AccountDialog
+from app.ui.helpers.worker import run_in_background, set_background_operations_enabled
 
 
 class AccountShell(QMainWindow):
@@ -22,6 +26,11 @@ class AccountShell(QMainWindow):
     def __init__(self, auth: SupabaseEmailOtpAuth | None = None):
         super().__init__()
         self.auth = auth or SupabaseEmailOtpAuth()
+        set_background_operations_enabled(True)
+        self._main_window = None
+        self._activation_coordinator = ActivationCoordinator(
+            SupabaseWorkspaceRepository(lambda: self.auth.authenticated_client)
+        )
         self.setWindowTitle("Daftar — تسجيل الدخول")
         self.resize(720, 420)
         self.setLayoutDirection(Qt.RightToLeft)
@@ -76,8 +85,53 @@ class AccountShell(QMainWindow):
 
     def open_account_dialog(self) -> None:
         dialog = AccountDialog(self.auth, self)
-        dialog.exec()
+        if dialog.exec() == QDialog.Accepted:
+            result = dialog.verification_result
+            identity = result.identity if result is not None else self.auth.authenticated_identity
+            if identity is not None:
+                self._start_activation(identity)
+                return
         self._refresh_status()
+
+    def _start_activation(self, identity) -> None:
+        self._set_activation_busy(True, "جاري فتح مساحة العمل بأمان...")
+        run_in_background(
+            self,
+            lambda: self._activation_coordinator.activate(identity),
+            on_result=self._on_activation_success,
+            on_error=self._on_activation_error,
+            on_finished=lambda: self._set_activation_busy(False),
+        )
+
+    def _on_activation_success(self, activation_result) -> None:
+        from app.ui.main_window import MainWindow
+
+        self._main_window = MainWindow(
+            auth=self.auth,
+            activation_result=activation_result,
+        )
+        self._main_window.showNormal()
+        self._main_window.raise_()
+        self._main_window.activateWindow()
+        self.hide()
+
+    def _on_activation_error(self, error: Exception) -> None:
+        self._activation_coordinator.rollback_partial_activation()
+        self.auth.sign_out()
+        if isinstance(error, WorkspaceLookupError):
+            self.status_label.setText(str(error))
+        else:
+            self.status_label.setText(
+                "تعذر فتح مساحة العمل بأمان. لم يتم فتح أي بيانات تشغيلية."
+            )
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _set_activation_busy(self, busy: bool, message: str = "") -> None:
+        self.sign_in_btn.setEnabled(not busy)
+        if message:
+            self.status_label.setText(message)
 
     def _refresh_status(self) -> None:
         state = self.auth.current_state

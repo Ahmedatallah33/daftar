@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -39,3 +40,27 @@ def test_packaged_verifier_failure_probe_exits_nonzero():
 
     assert result.returncode != 0
     assert "controlled failure" in result.stderr
+
+
+def test_activation_modules_import_for_packaging_probe():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            (
+                "import app.activation; "
+                "import app.cloud.auth_identity; "
+                "import app.cloud.supabase_workspace_repository; "
+                "import app.restart; "
+                "print('ACTIVATION_IMPORT_OK')"
+            ),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "ACTIVATION_IMPORT_OK" in result.stdout

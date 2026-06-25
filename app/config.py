@@ -27,14 +27,16 @@ def _default_user_root() -> Path:
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / APP_NAME
 
 
-USER_ROOT = _default_user_root()
+INSTALLATION_ROOT = _default_user_root()
+USER_ROOT = INSTALLATION_ROOT
 DATA_DIR = USER_ROOT / "data"
 BACKUPS_DIR = USER_ROOT / "backups"
 EXPORTS_DIR = USER_ROOT / "exports"
 INVOICES_DIR = EXPORTS_DIR / "invoices"
 LOGS_DIR = USER_ROOT / "logs"
 RESTORE_DIR = USER_ROOT / "restore"
-IDENTITY_DIR = USER_ROOT / "identity"
+INSTALLATION_LOGS_DIR = INSTALLATION_ROOT / "installation_logs"
+IDENTITY_DIR = INSTALLATION_ROOT / "identity"
 IDENTITY_METADATA_PATH = IDENTITY_DIR / "metadata.json"
 
 BASE_DIR = RESOURCE_ROOT  # Backward-compatible alias for read-only application assets.
@@ -84,7 +86,7 @@ def apply_user_root(user_root: Path) -> None:
     """Repoint writable runtime paths to an already selected user/account root."""
 
     global USER_ROOT, DATA_DIR, BACKUPS_DIR, EXPORTS_DIR, INVOICES_DIR
-    global LOGS_DIR, RESTORE_DIR, IDENTITY_DIR, IDENTITY_METADATA_PATH, DB_PATH, DB_URL
+    global LOGS_DIR, RESTORE_DIR, DB_PATH, DB_URL
 
     USER_ROOT = Path(user_root).expanduser().resolve()
     DATA_DIR = USER_ROOT / "data"
@@ -93,10 +95,14 @@ def apply_user_root(user_root: Path) -> None:
     INVOICES_DIR = EXPORTS_DIR / "invoices"
     LOGS_DIR = USER_ROOT / "logs"
     RESTORE_DIR = USER_ROOT / "restore"
-    IDENTITY_DIR = USER_ROOT / "identity"
-    IDENTITY_METADATA_PATH = IDENTITY_DIR / "metadata.json"
     DB_PATH = DATA_DIR / "teacher.db"
     DB_URL = f"sqlite:///{DB_PATH.as_posix()}"
+
+
+def reset_user_root() -> None:
+    """Return runtime writable paths to the installation-level signed-out root."""
+
+    apply_user_root(INSTALLATION_ROOT)
 
 
 def legacy_roots() -> list[Path]:

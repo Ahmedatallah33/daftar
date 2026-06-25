@@ -1,9 +1,7 @@
 """اختبارات منطق الفواتير والمستحقات."""
 from datetime import datetime
 
-import pytest
-
-from app.services.student_service import create_student, update_student
+from app.services.student_service import create_student
 from app.services.session_service import add_session, add_video
 from app.services import billing_service as billing
 

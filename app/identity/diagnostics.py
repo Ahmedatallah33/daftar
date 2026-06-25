@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from time import time
 
-from app.config import LOGS_DIR
+from app.config import INSTALLATION_LOGS_DIR
 from app.identity.models import AccountState
 
 
@@ -62,7 +62,7 @@ class IdentityDiagnosticEvent:
 
 
 class IdentityDiagnostics:
-    def __init__(self, log_dir: Path = LOGS_DIR):
+    def __init__(self, log_dir: Path = INSTALLATION_LOGS_DIR):
         self.log_path = Path(log_dir) / "identity.log"
 
     def record(self, event: IdentityDiagnosticEvent) -> bool:

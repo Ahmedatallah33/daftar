@@ -26,10 +26,12 @@ def test_valid_database_loads_persisted_theme_after_startup():
 def test_startup_recovery_message_remains_arabic_and_preserves_database_guidance(
     tmp_path, monkeypatch
 ):
+    from app import config
+
     database = tmp_path / "corrupt.db"
     backup_dir = tmp_path / "backups"
-    monkeypatch.setattr(startup, "DB_PATH", database)
-    monkeypatch.setattr(startup, "BACKUPS_DIR", backup_dir)
+    monkeypatch.setattr(config, "DB_PATH", database)
+    monkeypatch.setattr(config, "BACKUPS_DIR", backup_dir)
 
     message = startup.startup_error_message(RuntimeError("broken"))
 

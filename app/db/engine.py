@@ -1,6 +1,7 @@
 import os
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.exc import OperationalError
@@ -47,6 +48,19 @@ _MIGRATIONS = {
 }
 
 
+class _UnboundEngine:
+    url = type("_UnboundUrl", (), {"database": None})()
+
+    def connect(self):
+        raise InvalidDatabaseError("Database engine is not bound to an active account.")
+
+    def begin(self):
+        raise InvalidDatabaseError("Database engine is not bound to an active account.")
+
+    def dispose(self) -> None:
+        return None
+
+
 def _create_engine(db_url: str):
     created = create_engine(
         db_url,
@@ -67,10 +81,14 @@ def _create_engine(db_url: str):
     return created
 
 
-_ACTIVE_DB_URL = os.environ.get("TEACHER_DB_URL", config.DB_URL)
-engine = _create_engine(_ACTIVE_DB_URL)
+_ACTIVE_DB_URL = os.environ.get("TEACHER_DB_URL")
+engine: Any = _create_engine(_ACTIVE_DB_URL) if _ACTIVE_DB_URL else _UnboundEngine()
 SessionLocal = scoped_session(
-    sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    sessionmaker(
+        bind=None if isinstance(engine, _UnboundEngine) else engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
 )
 
 
@@ -84,7 +102,19 @@ def configure_engine(db_url: str):
     return engine
 
 
+def unbind_engine() -> None:
+    """Dispose and leave the DB layer unusable until a context is activated."""
+
+    global engine
+    SessionLocal.remove()
+    engine.dispose()
+    engine = _UnboundEngine()
+    SessionLocal.configure(bind=None)
+
+
 def current_database_path() -> Path:
+    if isinstance(engine, _UnboundEngine):
+        raise InvalidDatabaseError("Database engine is not bound to an active account.")
     database = engine.url.database
     if not database:
         raise InvalidDatabaseError("لم يتم تحديد مسار قاعدة البيانات.")
@@ -264,6 +294,8 @@ def init_db() -> Path | None:
 
 
 def get_session():
+    if isinstance(engine, _UnboundEngine):
+        raise InvalidDatabaseError("Database engine is not bound to an active account.")
     return SessionLocal()
 
 

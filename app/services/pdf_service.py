@@ -18,7 +18,7 @@ from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 )
 
-from app.config import FONTS_DIR, INVOICES_DIR, TEACHER_NAME, CURRENCY
+from app import config
 from app.db.models import Student
 from app.services.session_service import list_sessions, list_videos
 
@@ -54,9 +54,9 @@ def _register_font() -> tuple[str, str]:
     candidates = [
         ("Tahoma", win_fonts / "tahoma.ttf", win_fonts / "tahomabd.ttf"),
         ("Arial", win_fonts / "arial.ttf", win_fonts / "arialbd.ttf"),
-        ("Cairo", FONTS_DIR / "Cairo-Regular.ttf", FONTS_DIR / "Cairo-Bold.ttf"),
-        ("Tajawal", FONTS_DIR / "Tajawal-Regular.ttf", FONTS_DIR / "Tajawal-Bold.ttf"),
-        ("Amiri", FONTS_DIR / "Amiri-Regular.ttf", FONTS_DIR / "Amiri-Bold.ttf"),
+        ("Cairo", config.FONTS_DIR / "Cairo-Regular.ttf", config.FONTS_DIR / "Cairo-Bold.ttf"),
+        ("Tajawal", config.FONTS_DIR / "Tajawal-Regular.ttf", config.FONTS_DIR / "Tajawal-Bold.ttf"),
+        ("Amiri", config.FONTS_DIR / "Amiri-Regular.ttf", config.FONTS_DIR / "Amiri-Bold.ttf"),
     ]
     for family, reg_path, bold_path in candidates:
         if not reg_path.exists():
@@ -113,7 +113,8 @@ def generate_invoice(student: Student, amount: float, notes: str = "") -> Path:
 
     today = datetime.now()
     filename = f"{_safe_filename(student.name)}_{today.strftime('%Y%m%d_%H%M%S')}.pdf"
-    out_path = INVOICES_DIR / filename
+    out_path = config.INVOICES_DIR / filename
+    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     doc = SimpleDocTemplate(
         str(out_path),
@@ -142,7 +143,7 @@ def generate_invoice(student: Student, amount: float, notes: str = "") -> Path:
     )
 
     story = []
-    story.append(Paragraph(ar(f"فاتورة حصص — {TEACHER_NAME}"), title_style))
+    story.append(Paragraph(ar(f"فاتورة حصص — {config.TEACHER_NAME}"), title_style))
     story.append(Spacer(1, 4 * mm))
     invoice_no = today.strftime('%Y%m%d-%H%M%S')
     story.append(Paragraph(
@@ -155,8 +156,8 @@ def generate_invoice(student: Student, amount: float, notes: str = "") -> Path:
         [ar(student.name), ar("اسم الطالب:")],
         [ar(str(len(sessions))), ar("عدد الحصص:")],
         [ar(str(len(videos))), ar("عدد الفيديوهات المرسلة:")],
-        [ar(f"{student.price_per_session:.2f} {CURRENCY}"), ar("سعر الحصة:")],
-        [ar(f"{amount:.2f} {CURRENCY}"), ar("المبلغ المستحق:")],
+        [ar(f"{student.price_per_session:.2f} {config.CURRENCY}"), ar("سعر الحصة:")],
+        [ar(f"{amount:.2f} {config.CURRENCY}"), ar("المبلغ المستحق:")],
     ]
     info_table = Table(info_data, colWidths=[110 * mm, 60 * mm])
     info_table.setStyle(TableStyle([
@@ -239,7 +240,7 @@ def generate_invoice(student: Student, amount: float, notes: str = "") -> Path:
         story.append(Spacer(1, 6 * mm))
 
     total_data = [[
-        ar(f"{amount:.2f} {CURRENCY}"),
+        ar(f"{amount:.2f} {config.CURRENCY}"),
         ar("الإجمالي المستحق:"),
     ]]
     total_table = Table(total_data, colWidths=[110 * mm, 60 * mm])
@@ -258,7 +259,19 @@ def generate_invoice(student: Student, amount: float, notes: str = "") -> Path:
     ]))
     story.append(total_table)
     story.append(Spacer(1, 10 * mm))
-    story.append(Paragraph(ar(f"شكراً لكم - {TEACHER_NAME}"), small_style))
+    story.append(Paragraph(ar(f"شكراً لكم - {config.TEACHER_NAME}"), small_style))
 
     doc.build(story)
     return out_path
+
+
+def __getattr__(name: str):
+    if name == "INVOICES_DIR":
+        return config.INVOICES_DIR
+    if name == "FONTS_DIR":
+        return config.FONTS_DIR
+    if name == "TEACHER_NAME":
+        return config.TEACHER_NAME
+    if name == "CURRENCY":
+        return config.CURRENCY
+    raise AttributeError(name)

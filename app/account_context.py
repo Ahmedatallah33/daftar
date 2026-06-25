@@ -13,7 +13,7 @@ class AccountContextError(RuntimeError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class AccountWorkspaceContext:
     user_id: str
     workspace_id: str
@@ -29,6 +29,9 @@ class AccountWorkspaceContext:
     @property
     def db_url(self) -> str:
         return f"sqlite:///{self.database_path.as_posix()}"
+
+    def __repr__(self) -> str:
+        return "AccountWorkspaceContext(user_id=<redacted>, workspace_id=<redacted>)"
 
 
 _active_context: AccountWorkspaceContext | None = None
@@ -79,14 +82,19 @@ def activate_account_context(
         raise AccountContextError("An account context is already active.")
     from app.db import engine as engine_mod
 
-    config.apply_user_root(context.user_root)
-    engine_mod.configure_engine(context.db_url)
-    if initialize:
-        from app.startup import initialize_account_context_data
+    try:
+        config.apply_user_root(context.user_root)
+        engine_mod.configure_engine(context.db_url)
+        if initialize:
+            from app.startup import initialize_account_context_data
 
-        initialize_account_context_data()
-    _active_context = context
-    return context
+            initialize_account_context_data()
+        _active_context = context
+        return context
+    except Exception:
+        engine_mod.unbind_engine()
+        _active_context = None
+        raise
 
 
 def deactivate_account_context() -> None:
@@ -98,7 +106,7 @@ def deactivate_account_context() -> None:
     try:
         engine_mod.SessionLocal.remove()
     finally:
-        engine_mod.engine.dispose()
+        engine_mod.unbind_engine()
         _active_context = None
 
 

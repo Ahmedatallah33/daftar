@@ -4,15 +4,23 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from app.config import (
-    BACKUPS_DIR,
-    DB_PATH,
-    LOGS_DIR,
-    ensure_dirs,
-    migrate_legacy_data,
-)
+from app import config
 from app.db.engine import init_db
 from app.services.backup_restore_service import apply_pending_restore
+
+ensure_dirs = config.ensure_dirs
+migrate_legacy_data = config.migrate_legacy_data
+
+
+def _ensure_engine_bound_to_config() -> None:
+    from app.db import engine as engine_mod
+
+    try:
+        if engine_mod.current_database_path() == config.DB_PATH.resolve():
+            return
+    except Exception:
+        pass
+    engine_mod.configure_engine(config.DB_URL)
 
 
 def initialize_application_data() -> Path | None:
@@ -22,6 +30,7 @@ def initialize_application_data() -> Path | None:
     # saved settings, themes, or any database-dependent UI is loaded.
     apply_pending_restore()
     migrate_legacy_data()
+    _ensure_engine_bound_to_config()
     return init_db()
 
 
@@ -35,24 +44,25 @@ def initialize_account_context_data() -> Path | None:
 
     ensure_dirs()
     apply_pending_restore()
+    _ensure_engine_bound_to_config()
     return init_db()
 
 
 def startup_error_message(error: BaseException) -> str:
     return (
         "تعذر فتح قاعدة بيانات Teacher Hub بأمان.\n\n"
-        f"المسار: {DB_PATH}\n"
+        f"المسار: {config.DB_PATH}\n"
         f"التفاصيل: {error}\n\n"
         "لم يحذف البرنامج البيانات الأصلية. أغلق التطبيق وكل عملياته قبل "
         "أي استعادة يدوية، واحتفظ بملف قاعدة البيانات الحالي.\n"
-        f"مجلد النسخ الاحتياطية: {BACKUPS_DIR}\n"
+        f"مجلد النسخ الاحتياطية: {config.BACKUPS_DIR}\n"
         "استعد نسخة سليمة أو اطلب الدعم قبل محاولة التشغيل مرة أخرى."
     )
 
 
 def log_startup_failure(error: BaseException) -> Path:
-    ensure_dirs()
-    target = LOGS_DIR / "startup_error.log"
+    config.ensure_dirs()
+    target = config.LOGS_DIR / "startup_error.log"
     with target.open("a", encoding="utf-8") as handle:
         handle.write(f"\n{datetime.now().isoformat(timespec='seconds')} startup failure\n")
         traceback.print_exception(type(error), error, error.__traceback__, file=handle)

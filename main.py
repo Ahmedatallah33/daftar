@@ -7,10 +7,10 @@ from pathlib import Path
 def _install_crash_logger():
     import tempfile
     try:
-        from app.config import LOGS_DIR
+        from app.config import INSTALLATION_LOGS_DIR
 
-        LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        log_path = LOGS_DIR / "crash.log"
+        INSTALLATION_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = INSTALLATION_LOGS_DIR / "crash.log"
     except Exception:
         log_path = Path(tempfile.gettempdir()) / "teacher_hub_crash.log"
 
@@ -34,6 +34,7 @@ from PySide6.QtGui import QFont, QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication
 
 from app.config import FONTS_DIR, ICONS_DIR
+from app import restart as app_restart
 
 
 CAIRO_WEIGHTS = (
@@ -42,6 +43,15 @@ CAIRO_WEIGHTS = (
     "Cairo-SemiBold.ttf",
     "Cairo-Bold.ttf",
 )
+
+_single_instance_handle = None
+
+
+def _win32_modules():
+    import ctypes
+    from ctypes import wintypes
+
+    return ctypes, wintypes
 
 
 def load_fonts(app: QApplication) -> None:
@@ -79,18 +89,18 @@ def _acquire_single_instance_lock():
     we try to bring its window to the foreground and exit this launch.
     """
     try:
-        import ctypes
-        from ctypes import wintypes
+        ctypes, wintypes = _win32_modules()
     except ImportError:
         return True  # non-windows, don't block
 
+    global _single_instance_handle
     ERROR_ALREADY_EXISTS = 183
     kernel32 = ctypes.windll.kernel32
     kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
     kernel32.CreateMutexW.restype = wintypes.HANDLE
 
     # Keep the handle alive for the lifetime of the process
-    _acquire_single_instance_lock._handle = kernel32.CreateMutexW(
+    _single_instance_handle = kernel32.CreateMutexW(
         None, False, "Global\\TeacherHub_SingleInstanceMutex"
     )
     last_err = kernel32.GetLastError()
@@ -106,6 +116,30 @@ def _acquire_single_instance_lock():
         except Exception:
             pass
         return False
+    return True
+
+
+def _release_single_instance_lock() -> None:
+    global _single_instance_handle
+    if _single_instance_handle is None:
+        return
+    try:
+        ctypes, _wintypes = _win32_modules()
+        ctypes.windll.kernel32.CloseHandle(_single_instance_handle)
+    except Exception:
+        pass
+    finally:
+        _single_instance_handle = None
+
+
+def _launch_requested_restart_after_exit() -> bool:
+    if not app_restart.restart_requested():
+        return False
+    _release_single_instance_lock()
+    try:
+        app_restart.launch_replacement_process()
+    finally:
+        app_restart.reset_restart_request()
     return True
 
 
@@ -147,7 +181,9 @@ def main():
     window.showNormal()
     window.raise_()
     window.activateWindow()
-    return app.exec()
+    exit_code = app.exec()
+    _launch_requested_restart_after_exit()
+    return exit_code
 
 
 if __name__ == "__main__":

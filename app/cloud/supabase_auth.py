@@ -13,6 +13,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from app.cloud.auth_identity import AuthenticatedIdentity, AuthenticatedIdentityError
 from app.cloud.supabase_provider import (
     ProviderConfigError,
     SupabaseCredentialBridge,
@@ -59,6 +60,7 @@ class OtpRequestResult:
 @dataclass(frozen=True, slots=True)
 class OtpVerifyResult:
     account_state: AccountState
+    identity: AuthenticatedIdentity
 
 
 ClientFactory = Callable[[SupabaseProjectConfig], Any]
@@ -86,10 +88,23 @@ class SupabaseEmailOtpAuth:
         self._env = env
         self._client: Any | None = None
         self._access_token: str | None = None
+        self._identity: AuthenticatedIdentity | None = None
 
     @property
     def access_token_in_memory(self) -> str | None:
         return self._access_token
+
+    @property
+    def authenticated_identity(self) -> AuthenticatedIdentity | None:
+        return self._identity
+
+    @property
+    def authenticated_client(self) -> Any:
+        if self._client is None or self._identity is None or self._access_token is None:
+            raise SupabaseAuthInvalidOtpError(
+                "لم تكتمل جلسة الدخول الآمنة. أعد تسجيل الدخول وحاول مرة أخرى."
+            )
+        return self._client
 
     @property
     def current_state(self) -> AccountState:
@@ -146,10 +161,29 @@ class SupabaseEmailOtpAuth:
                 "لم تكتمل جلسة الدخول. اطلب رمزاً جديداً وحاول مرة أخرى."
             )
 
-        self.credential_bridge.store_refresh_secret(refresh_token)
+        try:
+            identity = _identity_from_response(response, session)
+        except AuthenticatedIdentityError as error:
+            raise SupabaseAuthInvalidOtpError(
+                "لم تكتمل هوية الحساب الآمنة. أعد تسجيل الدخول وحاول مرة أخرى."
+            ) from error
+
+        self.credential_bridge.store_refresh_secret_for_user(identity.user_id, refresh_token)
         self._access_token = access_token
+        self._identity = identity
         self._transition_to_session_established()
-        return OtpVerifyResult(account_state=self.current_state)
+        return OtpVerifyResult(account_state=self.current_state, identity=identity)
+
+    def sign_out(self) -> None:
+        identity = self._identity
+        self._access_token = None
+        self._identity = None
+        if identity is not None:
+            try:
+                self.credential_bridge.clear_refresh_secret_for_user(identity.user_id)
+            except Exception:
+                pass
+        self._transition_if_allowed(account_state_for_event("signed_out"))
 
     def _client_for_login(self) -> Any:
         if self._client is not None:
@@ -202,6 +236,24 @@ def _session_value(session: Any, name: str) -> str | None:
     else:
         value = getattr(session, name, None)
     return value if isinstance(value, str) and value else None
+
+
+def _identity_from_response(response: Any, session: Any) -> AuthenticatedIdentity:
+    user = _provider_value(response, "user")
+    if user is None:
+        user = _provider_value(session, "user")
+    user_id = _provider_value(user, "id")
+    if user_id is None:
+        user_id = _provider_value(user, "user_id")
+    return AuthenticatedIdentity(user_id)
+
+
+def _provider_value(source: Any, name: str) -> Any:
+    if source is None:
+        return None
+    if isinstance(source, Mapping):
+        return source.get(name)
+    return getattr(source, name, None)
 
 
 def _is_provider_failure(error: Exception) -> bool:

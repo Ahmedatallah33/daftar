@@ -6,7 +6,16 @@ from typing import Any
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, Slot
 from PySide6.QtWidgets import QApplication
 
-from app.db.engine import SessionLocal
+_OPERATIONS_ENABLED = True
+
+
+class BackgroundOperationsStopped(RuntimeError):
+    pass
+
+
+def set_background_operations_enabled(enabled: bool) -> None:
+    global _OPERATIONS_ENABLED
+    _OPERATIONS_ENABLED = enabled
 
 
 class _WorkerSignals(QObject):
@@ -30,7 +39,12 @@ class _Worker(QRunnable):
         else:
             self.signals.result.emit(result)
         finally:
-            SessionLocal.remove()
+            try:
+                from app.db import engine as engine_mod
+
+                engine_mod.SessionLocal.remove()
+            except Exception:
+                pass
             self.signals.finished.emit()
 
 
@@ -43,6 +57,8 @@ def run_in_background(
     on_finished: Callable[[], None] | None = None,
 ) -> _Worker:
     """Start *function* and deliver all callbacks on the owner's Qt thread."""
+    if not _OPERATIONS_ENABLED:
+        raise BackgroundOperationsStopped("Background operations are stopped.")
     worker = _Worker(function)
     active = getattr(owner, "_background_workers", None)
     if active is None:

@@ -16,29 +16,20 @@ if str(ROOT) not in sys.path:
 
 @pytest.fixture(autouse=True)
 def temp_db(tmp_path, monkeypatch):
+    from app import config
     from app.db import engine as engine_mod
 
-    db_file = tmp_path / "test.db"
-    engine_mod.configure_engine(f"sqlite:///{db_file}")
+    original_root = config.USER_ROOT
+    test_root = tmp_path / "_runtime"
+    config.apply_user_root(test_root)
+    engine_mod.configure_engine(config.DB_URL)
     engine_mod.init_db()
-
-    invoices_dir = tmp_path / "invoices"
-    exports_dir = tmp_path / "exports"
-    backups_dir = tmp_path / "backups"
-    invoices_dir.mkdir(parents=True, exist_ok=True)
-    exports_dir.mkdir(parents=True, exist_ok=True)
-    backups_dir.mkdir(parents=True, exist_ok=True)
-
-    # Rebind config paths that the services captured at import time.
-    import app.services.billing_service as billing
-    import app.services.pdf_service as pdf
-    import app.services.excel_service as excel
-
-    monkeypatch.setattr(billing, "DB_PATH", db_file, raising=False)
-    monkeypatch.setattr(billing, "BACKUPS_DIR", backups_dir, raising=False)
-    monkeypatch.setattr(pdf, "INVOICES_DIR", invoices_dir, raising=False)
-    monkeypatch.setattr(excel, "EXPORTS_DIR", exports_dir, raising=False)
 
     yield engine_mod.SessionLocal
 
-    engine_mod.SessionLocal.remove()
+    from app.ui.helpers.worker import set_background_operations_enabled
+    from app.account_context import deactivate_account_context
+
+    set_background_operations_enabled(True)
+    deactivate_account_context()
+    config.apply_user_root(original_root)

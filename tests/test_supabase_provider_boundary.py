@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import io
 import tokenize
+import uuid
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ import pytest
 from app.cloud.supabase_provider import (
     DEVELOPMENT_PROJECT_REF,
     SUPABASE_REFRESH_CREDENTIAL_NAME,
+    SUPABASE_REFRESH_CREDENTIAL_PREFIX,
     ProviderConfigError,
     SupabaseAuthMethod,
     SupabaseCredentialBridge,
@@ -66,27 +68,29 @@ def test_only_email_otp_is_prepared():
 
 
 def test_refresh_secret_is_namespaced_under_identity():
-    target = credential_target(SUPABASE_REFRESH_CREDENTIAL_NAME)
-    assert target == f"{TARGET_NAMESPACE}Provider/Supabase/refresh"
-    assert target.startswith("Daftar/Identity/")
+    user_id = str(uuid.uuid4())
+    assert SUPABASE_REFRESH_CREDENTIAL_NAME == "Provider/Supabase/refresh"
+    target = credential_target(f"{SUPABASE_REFRESH_CREDENTIAL_PREFIX}/{user_id}/refresh")
+    assert target == f"{TARGET_NAMESPACE}Provider/Supabase/{user_id}/refresh"
 
 
 def test_credential_bridge_round_trips_only_through_the_secure_store():
     store = InMemoryCredentialStore()
     bridge = SupabaseCredentialBridge(credential_store=store)
+    user_id = str(uuid.uuid4())
 
-    bridge.store_refresh_secret("future-supabase-refresh-token")
-    assert bridge.load_refresh_secret() == "future-supabase-refresh-token"
+    bridge.store_refresh_secret_for_user(user_id, "future-supabase-refresh-token")
+    assert bridge.load_refresh_secret_for_user(user_id) == "future-supabase-refresh-token"
     # The secret lives only under the namespaced credential target.
-    assert store.read_credential(SUPABASE_REFRESH_CREDENTIAL_NAME) == (
+    assert store.read_credential(f"{SUPABASE_REFRESH_CREDENTIAL_PREFIX}/{user_id}/refresh") == (
         "future-supabase-refresh-token"
     )
 
-    bridge.clear_refresh_secret()
+    bridge.clear_refresh_secret_for_user(user_id)
     from app.identity.errors import CredentialNotFoundError
 
     with pytest.raises(CredentialNotFoundError):
-        bridge.load_refresh_secret()
+        bridge.load_refresh_secret_for_user(user_id)
 
 
 def test_event_to_state_mapping_is_complete_and_neutral():
@@ -188,6 +192,7 @@ def test_constructing_boundary_objects_does_no_io(tmp_path, monkeypatch):
     config = load_development_config({"SUPABASE_PUBLISHABLE_KEY": "x"})
 
     assert config.is_development
-    assert callable(bridge.store_refresh_secret)
+    assert callable(bridge.store_refresh_secret_for_user)
+    assert callable(bridge.clear_refresh_secret_for_user)
     # No files were created in the working directory by construction.
     assert list(work.iterdir()) == []
