@@ -35,6 +35,9 @@ class CredentialStore(Protocol):
     def delete_credential(self, name: str) -> None:
         """Delete a secret from a secure OS-backed store."""
 
+    def list_credential_targets(self, prefix: str) -> tuple[str, ...]:
+        """List OS credential targets under a validated Daftar namespace prefix."""
+
 
 def credential_target(name: str) -> str:
     if not isinstance(name, str):
@@ -114,8 +117,15 @@ class InMemoryCredentialStore:
         except KeyError as error:
             raise CredentialNotFoundError("Credential entry was not found.") from error
 
+    def list_credential_targets(self, prefix: str) -> tuple[str, ...]:
+        target_prefix = _credential_target_prefix(prefix)
+        return tuple(sorted(target for target in self._entries if target.startswith(target_prefix)))
+
     def inject_raw_entry(self, name: str, blob: bytes) -> None:
         self._entries[credential_target(name)] = blob
+
+    def inject_raw_target(self, target: str, blob: bytes) -> None:
+        self._entries[target] = blob
 
 
 class WindowsCredentialManagerStore:
@@ -173,6 +183,32 @@ class WindowsCredentialManagerStore:
                 raise CredentialNotFoundError("Credential entry was not found.")
             raise CredentialDeleteError(_windows_error_message("CredDeleteW"))
 
+    def list_credential_targets(self, prefix: str) -> tuple[str, ...]:
+        advapi32 = self._api()
+        target_prefix = _credential_target_prefix(prefix)
+        credentials_pointer = ctypes.POINTER(ctypes.POINTER(_CREDENTIALW))()
+        count = wintypes.DWORD()
+        if not advapi32.CredEnumerateW(
+            f"{target_prefix}*",
+            0,
+            ctypes.byref(count),
+            ctypes.byref(credentials_pointer),
+        ):
+            code = ctypes.get_last_error()
+            if code == _ERROR_NOT_FOUND:
+                return ()
+            raise CredentialReadError(_windows_error_message("CredEnumerateW"))
+        try:
+            targets = []
+            for index in range(count.value):
+                credential = credentials_pointer[index].contents
+                target_name = credential.TargetName
+                if isinstance(target_name, str) and target_name.startswith(target_prefix):
+                    targets.append(target_name)
+            return tuple(sorted(targets))
+        finally:
+            advapi32.CredFree(credentials_pointer)
+
     def _api(self):
         if self._advapi32 is None:
             raise CredentialStoreUnavailableError(
@@ -197,6 +233,13 @@ class WindowsCredentialManagerStore:
             wintypes.DWORD,
         ]
         advapi32.CredDeleteW.restype = wintypes.BOOL
+        advapi32.CredEnumerateW.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD),
+            ctypes.POINTER(ctypes.POINTER(ctypes.POINTER(_CREDENTIALW))),
+        ]
+        advapi32.CredEnumerateW.restype = wintypes.BOOL
         advapi32.CredFree.argtypes = [wintypes.LPVOID]
         advapi32.CredFree.restype = None
 
@@ -233,6 +276,13 @@ class _CREDENTIALW(ctypes.Structure):
 
 def _windows_error_message(operation: str) -> str:
     return f"{operation} failed with Windows error {ctypes.get_last_error()}."
+
+
+def _credential_target_prefix(prefix: str) -> str:
+    target_prefix = credential_target(prefix)
+    if not target_prefix.endswith("/"):
+        target_prefix = f"{target_prefix}/"
+    return target_prefix
 
 
 def assert_no_plaintext_fallback() -> None:

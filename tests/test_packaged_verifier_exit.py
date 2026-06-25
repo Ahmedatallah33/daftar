@@ -51,7 +51,10 @@ def test_activation_modules_import_for_packaging_probe():
             (
                 "import app.activation; "
                 "import app.cloud.auth_identity; "
+                "import app.cloud.supabase_auth; "
+                "import app.cloud.supabase_provider; "
                 "import app.cloud.supabase_workspace_repository; "
+                "import app.identity.credential_store; "
                 "import app.restart; "
                 "import app.ui.pages.workspace_picker_dialog; "
                 "print('ACTIVATION_IMPORT_OK')"

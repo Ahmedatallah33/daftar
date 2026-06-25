@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QLabel,
     QDialog,
     QMainWindow,
@@ -12,7 +13,15 @@ from PySide6.QtWidgets import (
 )
 
 from app.activation import ActivationCoordinator
-from app.cloud.supabase_auth import SupabaseEmailOtpAuth
+from app.cloud.supabase_auth import (
+    SupabaseAuthCredentialMalformedError,
+    SupabaseAuthCredentialRejectedError,
+    SupabaseAuthCredentialUnavailableError,
+    SupabaseAuthFlowError,
+    SupabaseAuthMissingConfigError,
+    SupabaseAuthProviderUnavailableError,
+    SupabaseEmailOtpAuth,
+)
 from app.cloud.supabase_workspace_repository import (
     SupabaseWorkspaceRepository,
     WorkspaceLookupError,
@@ -34,9 +43,11 @@ class AccountShell(QMainWindow):
         self.auth = auth or SupabaseEmailOtpAuth()
         set_background_operations_enabled(True)
         self._main_window = None
+        self._refresh_in_progress = False
         self._activation_in_progress = False
         self._workspace_lookup_in_progress = False
         self._workspace_picker_open = False
+        self._continue_reference = self._discover_single_remembered_session()
         self._activation_coordinator = ActivationCoordinator(
             SupabaseWorkspaceRepository(lambda: self.auth.authenticated_client)
         )
@@ -75,10 +86,20 @@ class AccountShell(QMainWindow):
         self.status_label.setObjectName("PageSubtitle")
         layout.addWidget(self.status_label)
 
+        entry_row = QHBoxLayout()
+        entry_row.addStretch(1)
+
+        self.continue_btn = QPushButton("متابعة")
+        self.continue_btn.setObjectName("SuccessBtn")
+        self.continue_btn.clicked.connect(self.continue_remembered_session)
+        entry_row.addWidget(self.continue_btn)
+
         self.sign_in_btn = QPushButton("تسجيل الدخول")
         self.sign_in_btn.setObjectName("SuccessBtn")
         self.sign_in_btn.clicked.connect(self.open_account_dialog)
-        layout.addWidget(self.sign_in_btn, alignment=Qt.AlignCenter)
+        entry_row.addWidget(self.sign_in_btn)
+        entry_row.addStretch(1)
+        layout.addLayout(entry_row)
 
         note = QLabel(
             "بيانات Teacher Hub المحلية القديمة محفوظة كما هي، ولن تُعرض أو تُستورد "
@@ -91,6 +112,52 @@ class AccountShell(QMainWindow):
         layout.addWidget(note)
 
         self._refresh_status()
+
+    def continue_remembered_session(self) -> None:
+        if self._flow_busy() or self._continue_reference is None:
+            return
+        self._refresh_in_progress = True
+        self._set_entry_busy(True, "جاري متابعة جلسة الدخول بأمان...")
+        run_in_background(
+            self,
+            lambda: self.auth.refresh_remembered_session(self._continue_reference),
+            on_result=self._on_reentry_success,
+            on_error=self._on_reentry_error,
+        )
+
+    def _on_reentry_success(self, result) -> None:
+        self._refresh_in_progress = False
+        self._continue_reference = None
+        self._sync_continue_button()
+        self._start_workspace_lookup(result.identity)
+
+    def _on_reentry_error(self, error: Exception) -> None:
+        self._refresh_in_progress = False
+        if isinstance(
+            error,
+            (
+                SupabaseAuthCredentialMalformedError,
+                SupabaseAuthCredentialRejectedError,
+                SupabaseAuthCredentialUnavailableError,
+            ),
+        ):
+            self._continue_reference = self._discover_single_remembered_session()
+        elif not isinstance(
+            error,
+            (SupabaseAuthMissingConfigError, SupabaseAuthProviderUnavailableError),
+        ):
+            self._continue_reference = self._discover_single_remembered_session()
+        self._set_entry_busy(False)
+        if isinstance(error, SupabaseAuthFlowError):
+            self.status_label.setText(str(error))
+        else:
+            self.status_label.setText(
+                "تعذرت متابعة جلسة الدخول المحفوظة. لم تُفتح أي بيانات تشغيلية."
+            )
+        self._sync_continue_button()
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
 
     def open_account_dialog(self) -> None:
         if self._flow_busy():
@@ -166,7 +233,8 @@ class AccountShell(QMainWindow):
     def _on_workspace_lookup_error(self, error: Exception) -> None:
         self._workspace_lookup_in_progress = False
         self._activation_coordinator.rollback_partial_activation()
-        self.auth.sign_out()
+        if not isinstance(error, WorkspaceLookupError):
+            self.auth.sign_out()
         self._set_entry_busy(False)
         if isinstance(error, WorkspaceLookupError):
             self.status_label.setText(str(error))
@@ -242,15 +310,18 @@ class AccountShell(QMainWindow):
 
     def _flow_busy(self) -> bool:
         return (
-            self._workspace_lookup_in_progress
+            self._refresh_in_progress
+            or self._workspace_lookup_in_progress
             or self._workspace_picker_open
             or self._activation_in_progress
         )
 
     def _set_entry_busy(self, busy: bool, message: str = "") -> None:
         self.sign_in_btn.setEnabled(not busy)
+        self.continue_btn.setEnabled(not busy)
         if message:
             self.status_label.setText(message)
+        self._sync_continue_button()
 
     def _refresh_status(self) -> None:
         state = self.auth.current_state
@@ -265,3 +336,21 @@ class AccountShell(QMainWindow):
         else:
             self.status_label.setText("الحالة: لم يتم تسجيل الدخول.")
             self.sign_in_btn.setText("تسجيل الدخول")
+        self._sync_continue_button()
+
+    def _sync_continue_button(self) -> None:
+        identity = getattr(self.auth, "authenticated_identity", None)
+        self.continue_btn.setVisible(
+            self._continue_reference is not None
+            and identity is None
+        )
+
+    def _discover_single_remembered_session(self):
+        discover = getattr(self.auth, "discover_remembered_sessions", None)
+        if discover is None:
+            return None
+        try:
+            references = tuple(discover())
+        except Exception:
+            return None
+        return references[0] if len(references) == 1 else None

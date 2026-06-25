@@ -18,10 +18,18 @@ from app.cloud.supabase_provider import (
     ProviderConfigError,
     SupabaseCredentialBridge,
     SupabaseProjectConfig,
+    SupabaseRefreshCredentialReference,
     account_state_for_event,
     load_development_config,
 )
 from app.identity.controller import IdentityController
+from app.identity.errors import (
+    CredentialDeleteError,
+    CredentialNotFoundError,
+    CredentialReadError,
+    CredentialStoreUnavailableError,
+    MalformedCredentialError,
+)
 from app.identity.models import AccountState
 
 
@@ -52,6 +60,18 @@ class SupabaseAuthInvalidOtpError(SupabaseAuthFlowError):
     """Raised when OTP verification does not produce a usable session."""
 
 
+class SupabaseAuthCredentialUnavailableError(SupabaseAuthFlowError):
+    """Raised when a remembered refresh credential cannot be loaded safely."""
+
+
+class SupabaseAuthCredentialMalformedError(SupabaseAuthFlowError):
+    """Raised when a remembered refresh credential is corrupt or malformed."""
+
+
+class SupabaseAuthCredentialRejectedError(SupabaseAuthFlowError):
+    """Raised when the provider rejects a remembered refresh credential."""
+
+
 @dataclass(frozen=True, slots=True)
 class OtpRequestResult:
     email: str
@@ -59,6 +79,12 @@ class OtpRequestResult:
 
 @dataclass(frozen=True, slots=True)
 class OtpVerifyResult:
+    account_state: AccountState
+    identity: AuthenticatedIdentity
+
+
+@dataclass(frozen=True, slots=True)
+class SessionRefreshResult:
     account_state: AccountState
     identity: AuthenticatedIdentity
 
@@ -109,6 +135,11 @@ class SupabaseEmailOtpAuth:
     @property
     def current_state(self) -> AccountState:
         return self.identity_controller.snapshot.state
+
+    def discover_remembered_sessions(
+        self,
+    ) -> tuple[SupabaseRefreshCredentialReference, ...]:
+        return self.credential_bridge.discover_refresh_credentials()
 
     def request_code(self, email: str) -> OtpRequestResult:
         normalized = normalize_email(email)
@@ -174,10 +205,97 @@ class SupabaseEmailOtpAuth:
         self._transition_to_session_established()
         return OtpVerifyResult(account_state=self.current_state, identity=identity)
 
+    def refresh_remembered_session(
+        self,
+        reference: SupabaseRefreshCredentialReference,
+    ) -> SessionRefreshResult:
+        if not isinstance(reference, SupabaseRefreshCredentialReference):
+            raise SupabaseAuthCredentialUnavailableError(
+                "تعذر قراءة جلسة الدخول المحفوظة. سجّل الدخول من جديد."
+            )
+        try:
+            refresh_token = self.credential_bridge.load_refresh_secret(reference)
+        except CredentialNotFoundError as error:
+            self._clear_memory_session()
+            raise SupabaseAuthCredentialUnavailableError(
+                "لم تعد جلسة الدخول المحفوظة متاحة. سجّل الدخول من جديد."
+            ) from error
+        except MalformedCredentialError as error:
+            self._clear_exact_refresh_credential(reference)
+            self._clear_memory_session()
+            self._transition_to_signed_out_if_allowed()
+            raise SupabaseAuthCredentialMalformedError(
+                "تعذر متابعة جلسة الدخول المحفوظة. سجّل الدخول من جديد."
+            ) from error
+        except (
+            CredentialReadError,
+            CredentialStoreUnavailableError,
+        ) as error:
+            self._clear_memory_session()
+            raise SupabaseAuthCredentialUnavailableError(
+                "تعذر قراءة جلسة الدخول المحفوظة الآن. حاول مرة أخرى."
+            ) from error
+
+        self._transition_to_sign_in_pending_if_allowed()
+        client = self._client_for_login()
+        try:
+            response = client.auth.refresh_session(refresh_token)
+        except Exception as error:
+            if _is_provider_failure(error):
+                self._clear_memory_session()
+                self._transition_if_allowed(account_state_for_event("provider_unavailable"))
+                raise SupabaseAuthProviderUnavailableError(
+                    "تعذر الاتصال بخدمة تسجيل الدخول الآن. حاول المتابعة مرة أخرى لاحقاً."
+                ) from error
+            self._clear_exact_refresh_credential(reference)
+            self._clear_memory_session()
+            self._transition_to_signed_out_if_allowed()
+            raise SupabaseAuthCredentialRejectedError(
+                "انتهت صلاحية جلسة الدخول المحفوظة. سجّل الدخول من جديد."
+            ) from error
+
+        session = getattr(response, "session", None)
+        if session is None and isinstance(response, Mapping):
+            session = response.get("session")
+        access_token = _session_value(session, "access_token")
+        replacement_refresh_token = _session_value(session, "refresh_token")
+        if not access_token or not replacement_refresh_token:
+            self._clear_exact_refresh_credential(reference)
+            self._clear_memory_session()
+            self._transition_to_signed_out_if_allowed()
+            raise SupabaseAuthCredentialRejectedError(
+                "انتهت صلاحية جلسة الدخول المحفوظة. سجّل الدخول من جديد."
+            )
+
+        try:
+            identity = _identity_from_response(response, session)
+        except AuthenticatedIdentityError as error:
+            self._clear_exact_refresh_credential(reference)
+            self._clear_memory_session()
+            self._transition_to_signed_out_if_allowed()
+            raise SupabaseAuthCredentialRejectedError(
+                "تعذر تأكيد هوية جلسة الدخول المحفوظة. سجّل الدخول من جديد."
+            ) from error
+        if identity.user_id != reference._user_id:
+            self._clear_exact_refresh_credential(reference)
+            self._clear_memory_session()
+            self._transition_to_signed_out_if_allowed()
+            raise SupabaseAuthCredentialRejectedError(
+                "تعذر تأكيد هوية جلسة الدخول المحفوظة. سجّل الدخول من جديد."
+            )
+
+        self.credential_bridge.store_refresh_secret_for_user(
+            identity.user_id,
+            replacement_refresh_token,
+        )
+        self._access_token = access_token
+        self._identity = identity
+        self._transition_to_session_established()
+        return SessionRefreshResult(account_state=self.current_state, identity=identity)
+
     def sign_out(self) -> None:
         identity = self._identity
-        self._access_token = None
-        self._identity = None
+        self._clear_memory_session()
         if identity is not None:
             try:
                 self.credential_bridge.clear_refresh_secret_for_user(identity.user_id)
@@ -210,6 +328,25 @@ class SupabaseEmailOtpAuth:
         if self.current_state == AccountState.PROVIDER_UNAVAILABLE:
             self._transition_if_allowed(account_state_for_event("otp_requested"))
             self._transition_if_allowed(target)
+
+    def _transition_to_sign_in_pending_if_allowed(self) -> None:
+        self._transition_if_allowed(account_state_for_event("otp_requested"))
+
+    def _transition_to_signed_out_if_allowed(self) -> None:
+        self._transition_if_allowed(account_state_for_event("signed_out"))
+
+    def _clear_memory_session(self) -> None:
+        self._access_token = None
+        self._identity = None
+
+    def _clear_exact_refresh_credential(
+        self,
+        reference: SupabaseRefreshCredentialReference,
+    ) -> None:
+        try:
+            self.credential_bridge.clear_refresh_secret(reference)
+        except (CredentialDeleteError, CredentialNotFoundError):
+            pass
 
 
 def normalize_email(email: str) -> str:

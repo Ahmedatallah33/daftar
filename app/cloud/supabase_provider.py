@@ -20,6 +20,7 @@ deferred to a later sprint.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -41,6 +42,11 @@ DEVELOPMENT_PROJECT_REF = "thzwrbicieyilufasfoo"
 # (resolves to "Daftar/Identity/Provider/Supabase/refresh").
 SUPABASE_REFRESH_CREDENTIAL_PREFIX = "Provider/Supabase"
 SUPABASE_REFRESH_CREDENTIAL_NAME = f"{SUPABASE_REFRESH_CREDENTIAL_PREFIX}/refresh"
+_REFRESH_TARGET_PATTERN = re.compile(
+    r"^Daftar/Identity/Provider/Supabase/"
+    r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    r"/refresh$"
+)
 
 
 class ProviderConfigError(RuntimeError):
@@ -70,6 +76,15 @@ class SupabaseProjectConfig:
     @property
     def is_development(self) -> bool:
         return self.project_ref == DEVELOPMENT_PROJECT_REF
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class SupabaseRefreshCredentialReference:
+    _user_id: str
+    _credential_name: str
+
+    def __repr__(self) -> str:
+        return "SupabaseRefreshCredentialReference(<redacted>)"
 
 
 def load_development_config(env: Mapping[str, str] | None = None) -> SupabaseProjectConfig:
@@ -117,6 +132,31 @@ class SupabaseCredentialBridge:
     def clear_refresh_secret_for_user(self, user_id: str) -> None:
         self._store.delete_credential(self._refresh_name(user_id))
 
+    def discover_refresh_credentials(self) -> tuple[SupabaseRefreshCredentialReference, ...]:
+        try:
+            targets = self._store.list_credential_targets(SUPABASE_REFRESH_CREDENTIAL_PREFIX)
+        except Exception:
+            return ()
+        references = []
+        seen: set[str] = set()
+        for target in targets:
+            reference = _reference_from_target(target)
+            if reference is None or reference._user_id in seen:
+                continue
+            seen.add(reference._user_id)
+            references.append(reference)
+        return tuple(references)
+
+    def load_refresh_secret(self, reference: SupabaseRefreshCredentialReference) -> str:
+        if not isinstance(reference, SupabaseRefreshCredentialReference):
+            raise ProviderConfigError("Invalid refresh credential reference.")
+        return self._store.read_credential(reference._credential_name)
+
+    def clear_refresh_secret(self, reference: SupabaseRefreshCredentialReference) -> None:
+        if not isinstance(reference, SupabaseRefreshCredentialReference):
+            raise ProviderConfigError("Invalid refresh credential reference.")
+        self._store.delete_credential(reference._credential_name)
+
 
 # Data-only mapping of Supabase auth outcomes to provider-neutral account
 # states. Applying a transition remains the IdentityController's responsibility;
@@ -141,3 +181,20 @@ def account_state_for_event(event: str) -> AccountState:
         return SUPABASE_EVENT_TO_STATE[event]
     except KeyError as error:
         raise ProviderConfigError(f"Unknown Supabase auth event: {event!r}") from error
+
+
+def _reference_from_target(target: str) -> SupabaseRefreshCredentialReference | None:
+    if not isinstance(target, str):
+        return None
+    match = _REFRESH_TARGET_PATTERN.fullmatch(target)
+    if match is None:
+        return None
+    try:
+        user_id = canonical_user_uuid(match.group(1))
+    except Exception:
+        return None
+    credential_name = f"{SUPABASE_REFRESH_CREDENTIAL_PREFIX}/{user_id}/refresh"
+    return SupabaseRefreshCredentialReference(
+        _user_id=user_id,
+        _credential_name=credential_name,
+    )
