@@ -34,6 +34,8 @@ EXPORTS_DIR = USER_ROOT / "exports"
 INVOICES_DIR = EXPORTS_DIR / "invoices"
 LOGS_DIR = USER_ROOT / "logs"
 RESTORE_DIR = USER_ROOT / "restore"
+IDENTITY_DIR = USER_ROOT / "identity"
+IDENTITY_METADATA_PATH = IDENTITY_DIR / "metadata.json"
 
 BASE_DIR = RESOURCE_ROOT  # Backward-compatible alias for read-only application assets.
 RESOURCES_DIR = RESOURCE_ROOT / "app" / "resources"

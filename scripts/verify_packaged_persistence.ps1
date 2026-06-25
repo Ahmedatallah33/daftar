@@ -1,13 +1,30 @@
+[CmdletBinding(DefaultParameterSetName = "Verify")]
 param(
-    [Parameter(Mandatory = $true)][string]$Executable,
-    [Parameter(Mandatory = $true)][string]$Python,
-    [Parameter(Mandatory = $true)][string]$Label,
-    [Parameter(Mandatory = $true)][string]$UserRoot,
-    [Parameter(Mandatory = $true)][string]$LegacyRoot,
-    [string]$ExpectedMainWindowTitle = ""
+    [Parameter(Mandatory = $true, ParameterSetName = "Verify")][string]$Executable,
+    [Parameter(Mandatory = $true, ParameterSetName = "Verify")][string]$Python,
+    [Parameter(Mandatory = $true, ParameterSetName = "Verify")][string]$Label,
+    [Parameter(Mandatory = $true, ParameterSetName = "Verify")][string]$UserRoot,
+    [Parameter(Mandatory = $true, ParameterSetName = "Verify")][string]$LegacyRoot,
+    [Parameter(ParameterSetName = "Verify")][string]$ExpectedMainWindowTitle = "",
+    [Parameter(Mandatory = $true, ParameterSetName = "ExitProbe")]
+    [ValidateSet("Success", "Failure")]
+    [string]$ExitSemanticsProbe
 )
 
 $ErrorActionPreference = "Stop"
+trap {
+    Write-Error $_
+    exit 1
+}
+
+if ($PSCmdlet.ParameterSetName -eq "ExitProbe") {
+    if ($ExitSemanticsProbe -eq "Success") {
+        Write-Output "PACKAGED_VERIFIER_EXIT_PROBE success"
+        exit 0
+    }
+    throw "PACKAGED_VERIFIER_EXIT_PROBE controlled failure"
+}
+
 $env:TEACHER_HUB_HOME = $UserRoot
 $env:TEACHER_HUB_LEGACY_ROOT = $LegacyRoot
 if (-not $ExpectedMainWindowTitle) {
@@ -158,3 +175,4 @@ Write-Output (
     "hash_unchanged_on_restart=$($hashBeforeRestart -eq $hashAfterRestart)"
 )
 Write-Output "$Label EXE_DIR_USER_FILES=$($executableFiles.Count) USER_ROOT=$UserRoot"
+exit 0
