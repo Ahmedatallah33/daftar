@@ -9,6 +9,16 @@ from pathlib import Path
 
 APP_NAME = "TeacherHub"
 APP_RELEASE_REFERENCE = "Sprint 2A"
+
+# Daftar-specific desktop identity. These are intentionally distinct from the
+# legacy Teacher Hub application so the two installations never share a Windows
+# single-instance mutex, taskbar identity, or second-instance focus target.
+DAFTAR_SINGLE_INSTANCE_MUTEX = "Global\\Daftar_SingleInstanceMutex"
+DAFTAR_APP_USER_MODEL_ID = "Daftar.Desktop.Manager.1"
+# The signed-out AccountShell window title is unambiguously Daftar (the legacy
+# Teacher Hub operational window uses a different, shared-looking title), so it
+# is the only safe target for second-instance foreground.
+DAFTAR_SIGN_IN_WINDOW_TITLE = "Daftar — تسجيل الدخول"
 SOURCE_ROOT = Path(__file__).resolve().parent.parent
 IS_FROZEN = bool(getattr(sys, "frozen", False))
 RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", SOURCE_ROOT)) if IS_FROZEN else SOURCE_ROOT

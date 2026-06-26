@@ -28,7 +28,7 @@ from app.cloud.supabase_workspace_repository import (
     WorkspaceMembership,
     WorkspaceSelectionError,
 )
-from app.config import ICONS_DIR
+from app.config import DAFTAR_SIGN_IN_WINDOW_TITLE, ICONS_DIR
 from app.identity.models import AccountState
 from app.ui.helpers.worker import run_in_background, set_background_operations_enabled
 from app.ui.pages.account_dialog import AccountDialog
@@ -51,7 +51,7 @@ class AccountShell(QMainWindow):
         self._activation_coordinator = ActivationCoordinator(
             SupabaseWorkspaceRepository(lambda: self.auth.authenticated_client)
         )
-        self.setWindowTitle("Daftar — تسجيل الدخول")
+        self.setWindowTitle(DAFTAR_SIGN_IN_WINDOW_TITLE)
         self.resize(720, 420)
         self.setLayoutDirection(Qt.RightToLeft)
 

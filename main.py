@@ -17,7 +17,7 @@ def _install_crash_logger():
     def _excepthook(exc_type, exc_value, exc_tb):
         try:
             with open(log_path, "w", encoding="utf-8") as f:
-                f.write("Teacher Hub uncaught exception:\n")
+                f.write("Daftar uncaught exception:\n")
                 traceback.print_exception(exc_type, exc_value, exc_tb, file=f)
         except Exception:
             pass
@@ -33,7 +33,13 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication
 
-from app.config import FONTS_DIR, ICONS_DIR
+from app.config import (
+    DAFTAR_APP_USER_MODEL_ID,
+    DAFTAR_SIGN_IN_WINDOW_TITLE,
+    DAFTAR_SINGLE_INSTANCE_MUTEX,
+    FONTS_DIR,
+    ICONS_DIR,
+)
 from app import restart as app_restart
 
 
@@ -42,6 +48,16 @@ CAIRO_WEIGHTS = (
     "Cairo-Medium.ttf",
     "Cairo-SemiBold.ttf",
     "Cairo-Bold.ttf",
+)
+
+# Second-instance focus is restricted to windows that are unambiguously Daftar.
+# The legacy Teacher Hub operational window is never targeted.
+DAFTAR_FOREGROUND_WINDOW_TITLES = (DAFTAR_SIGN_IN_WINDOW_TITLE,)
+
+# Fixed, non-sensitive startup diagnostic vocabulary. No tokens, emails, user
+# IDs, workspace IDs, credential targets, or paths are ever recorded.
+_ALLOWED_STARTUP_EVENTS = frozenset(
+    {"single_instance_acquired", "second_daftar_instance_blocked"}
 )
 
 _single_instance_handle = None
@@ -83,10 +99,13 @@ def load_fonts(app: QApplication) -> None:
 
 
 def _acquire_single_instance_lock():
-    """Prevent multiple copies of Teacher Hub from running at once.
+    """Prevent multiple copies of *Daftar* from running at once.
 
-    Uses a named mutex via Win32. If another instance already holds the mutex,
-    we try to bring its window to the foreground and exit this launch.
+    Uses a Daftar-specific named mutex via Win32. A running legacy Teacher Hub
+    process (which owns a different mutex) does not block Daftar. If another
+    *Daftar* instance already holds the mutex, we try to bring its sign-in
+    window forward — but only when it is unambiguously a Daftar window — and
+    exit this launch. The legacy Teacher Hub window is never targeted.
     """
     try:
         ctypes, wintypes = _win32_modules()
@@ -99,24 +118,61 @@ def _acquire_single_instance_lock():
     kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
     kernel32.CreateMutexW.restype = wintypes.HANDLE
 
-    # Keep the handle alive for the lifetime of the process
+    # Keep the handle alive for the lifetime of the process.
     _single_instance_handle = kernel32.CreateMutexW(
-        None, False, "Global\\TeacherHub_SingleInstanceMutex"
+        None, False, DAFTAR_SINGLE_INSTANCE_MUTEX
     )
     last_err = kernel32.GetLastError()
     if last_err == ERROR_ALREADY_EXISTS:
-        # Another instance is running — focus its window and exit
-        try:
-            user32 = ctypes.windll.user32
-            hwnd = user32.FindWindowW(None, "Teacher Hub \u2014 \u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u062d\u0635\u0635")
+        # Another Daftar instance is running — intentionally blocked, not a
+        # crash. Best-effort foreground of the existing Daftar window, then exit.
+        _record_startup_diagnostic("second_daftar_instance_blocked")
+        _foreground_existing_daftar_window(ctypes)
+        return False
+    _record_startup_diagnostic("single_instance_acquired")
+    return True
+
+
+def _foreground_existing_daftar_window(ctypes) -> None:
+    """Bring an existing Daftar window forward, if one is safely identifiable.
+
+    Only Daftar-specific window titles are searched, so a legacy Teacher Hub
+    window is never restored, foregrounded, or otherwise touched.
+    """
+    try:
+        user32 = ctypes.windll.user32
+        SW_RESTORE = 9
+        for title in DAFTAR_FOREGROUND_WINDOW_TITLES:
+            hwnd = user32.FindWindowW(None, title)
             if hwnd:
-                SW_RESTORE = 9
                 user32.ShowWindow(hwnd, SW_RESTORE)
                 user32.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
-        return False
-    return True
+                return
+    except Exception:
+        pass
+
+
+def _record_startup_diagnostic(event: str) -> None:
+    """Append a fixed, non-sensitive startup event to the installation log.
+
+    Distinguishes an intentionally blocked second Daftar instance from an
+    unexpected startup failure (the latter is captured by the crash logger).
+    Only whitelisted event names are written; no secrets, identifiers, tokens,
+    emails, paths, or credential targets are ever recorded.
+    """
+    if event not in _ALLOWED_STARTUP_EVENTS:
+        return
+    try:
+        from datetime import datetime
+
+        from app.config import INSTALLATION_LOGS_DIR
+
+        INSTALLATION_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().isoformat(timespec="seconds")
+        with open(INSTALLATION_LOGS_DIR / "startup.log", "a", encoding="utf-8") as handle:
+            handle.write(f"{timestamp} startup {event}\n")
+    except Exception:
+        pass
 
 
 def _release_single_instance_lock() -> None:
@@ -145,11 +201,12 @@ def _launch_requested_restart_after_exit() -> bool:
 
 def _set_windows_app_id():
     """Tell Windows we're our own app so the taskbar uses OUR icon,
-    not the generic pythonw.exe one."""
+    not the generic pythonw.exe one — and so Daftar is never grouped with the
+    legacy Teacher Hub application."""
     try:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "TeacherHub.Desktop.Manager.1"
+            DAFTAR_APP_USER_MODEL_ID
         )
     except Exception:
         pass
